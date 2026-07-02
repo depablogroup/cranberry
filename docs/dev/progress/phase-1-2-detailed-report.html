@@ -490,6 +490,28 @@ cranberry_rna-1.0.0a1.dist-info/licenses/LICENSE</code></pre>
     </div>
   </div>
 
+  <h2>Developer Workflow Update</h2>
+  <p>This review also covers the new developer operating guide requested after comparing Karpathy-style lightweight program instructions and the third-party <code>CLAUDE.md</code> behavioral checklist against Cranberry's needs.</p>
+  <table>
+    <thead><tr><th>File</th><th>Change</th><th>Reason</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>docs/dev/program.md</code></td>
+        <td>New developer-only operating guide, including a Cranberry-specific <code>Simplicity First</code> section.</td>
+        <td>Separates detailed agent workflow, scope rules, success criteria, simplicity rules, and experiment protocol from the short top-level instructions.</td>
+      </tr>
+      <tr>
+        <td><code>AGENTS.md</code></td>
+        <td>Points non-trivial work to both <code>docs/dev/program.md</code> and <code>docs/dev/cranberry-v1-plan.md</code>.</td>
+        <td>Keeps the auto-read entry point concise while preserving the design and workflow context needed for future sessions.</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="callout">
+    <strong>Important policy choice:</strong> the new guide borrows the useful parts of lightweight agent programs, such as explicit assumptions, surgical changes, and measurable success criteria, but does not copy an autonomous keep/discard loop for normal package work. Cranberry changes can affect scientific behavior, so the existing user-approved code-review workflow remains the default.
+  </div>
+
+
   <h2>Recommended Next PR / Phase</h2>
   <p>The next meaningful implementation step is the force-field core:</p>
   <ul>
