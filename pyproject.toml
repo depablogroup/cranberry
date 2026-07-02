@@ -1,0 +1,73 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cranberry-rna"
+version = "1.0.0a1"
+description = "Coarse-grained RNA simulations with OpenMM."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "TBD"}
+authors = [
+  {name = "CRANBERRY developers"}
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Chemistry",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7",
+  "build>=1",
+  "sphinx>=7",
+  "myst-parser>=2",
+]
+remd = [
+  "openmmtools",
+]
+jax = [
+  "jax",
+]
+train = [
+  "optax",
+]
+pysages = [
+  "pysages",
+]
+all = [
+  "cranberry-rna[dev,remd,jax,train,pysages]",
+]
+
+[project.scripts]
+cranberry = "cranberry.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/REPLACE-ME/cranberry-rna"
+Documentation = "https://github.com/REPLACE-ME/cranberry-rna"
+Repository = "https://github.com/REPLACE-ME/cranberry-rna"
+
+[tool.setuptools]
+packages = {find = {include = ["cranberry*"]}}
+include-package-data = true
+
+[tool.setuptools.package-data]
+cranberry = ["data/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+  "remd: tests requiring openmmtools",
+  "jax: tests requiring JAX",
+  "train: tests requiring training dependencies",
+  "pysages: tests requiring PySAGES",
+  "slow: slow tests",
+]
