@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CRANBERRY Phase 1-2 Code Review Report</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --ink: #18222c;
+      --muted: #5b6670;
+      --line: #d9e0e7;
+      --soft: #f5f7fa;
+      --soft-2: #eef4f8;
+      --accent: #0b66c3;
+      --accent-2: #6f3bb8;
+      --ok: #137348;
+      --warn: #9a5b00;
+      --code: #102030;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.55 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 36px 28px 72px;
+    }
+    h1, h2, h3 { letter-spacing: 0; line-height: 1.15; color: var(--ink); }
+    h1 { margin: 0 0 10px; font-size: 34px; }
+    h2 { margin: 34px 0 14px; font-size: 23px; border-top: 1px solid var(--line); padding-top: 24px; }
+    h3 { margin: 22px 0 10px; font-size: 17px; }
+    p { margin: 0 0 12px; color: var(--muted); }
+    a { color: var(--accent); }
+    code, pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    }
+    code { font-size: 0.94em; color: var(--code); }
+    pre {
+      margin: 10px 0 0;
+      padding: 13px 15px;
+      overflow: auto;
+      background: #0f1720;
+      color: #edf5ff;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0 0;
+      font-size: 14px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 8px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: var(--soft); color: var(--ink); }
+    ul { margin: 9px 0 0 20px; padding: 0; }
+    li { margin: 5px 0; }
+    .lede { max-width: 920px; font-size: 16px; }
+    .meta, .cards, .two-col, .three-col { display: grid; gap: 14px; }
+    .meta { grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 22px 0 28px; }
+    .two-col { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .three-col { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: white;
+    }
+    .card.soft { background: var(--soft); }
+    .label {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .value { font-size: 18px; font-weight: 700; color: var(--ink); }
+    .tag {
+      display: inline-block;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 3px 9px;
+      margin: 2px 4px 2px 0;
+      background: var(--soft);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .ok { color: var(--ok); font-weight: 700; }
+    .warn { color: var(--warn); font-weight: 700; }
+    .diagram {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+      margin-top: 12px;
+    }
+    .caption { margin-top: 8px; font-size: 13px; color: var(--muted); }
+    .commit {
+      border-left: 4px solid var(--accent);
+      padding-left: 14px;
+      margin: 18px 0;
+    }
+    .hash { font-weight: 700; color: var(--accent); }
+    .callout {
+      border-left: 4px solid var(--accent-2);
+      background: var(--soft-2);
+      padding: 13px 15px;
+      border-radius: 6px;
+      margin: 14px 0;
+    }
+    .small { font-size: 13px; color: var(--muted); }
+    @media (max-width: 880px) {
+      .meta, .two-col, .three-col { grid-template-columns: 1fr; }
+      main { padding: 28px 18px 56px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>CRANBERRY Phase 1-2 Code Review Report</h1>
+  <p class="lede">This developer-facing report reviews the important code and package-contract changes from the initial refactor. It focuses on the files a future contributor should read first, what each file now guarantees, and the validation evidence behind those guarantees.</p>
+
+  <section class="meta" aria-label="Repository summary">
+    <div class="card soft"><span class="label">Repository</span><div class="value">yihengwuKP/cranberry</div></div>
+    <div class="card soft"><span class="label">Visibility</span><div class="value">Private</div></div>
+    <div class="card soft"><span class="label">Package</span><div class="value">cranberry-rna</div></div>
+    <div class="card soft"><span class="label">Import</span><div class="value">cranberry</div></div>
+  </section>
+
+  <h2>Executive Summary</h2>
+  <div class="two-col">
+    <div class="card">
+      <h3>What is now in place</h3>
+      <ul>
+        <li>A clean Python package project, independent from the legacy <code>OpenMM-CGRNA</code> repo.</li>
+        <li>Installable package metadata in <code>pyproject.toml</code>.</li>
+        <li>A working <code>cranberry</code> CLI with real <code>inspect</code> subcommands.</li>
+        <li>Packaged CRANBERRY alpha model assets and canonical example PDBs.</li>
+        <li>Canonical input validation based on OpenMM PDB parsing.</li>
+        <li>Local and GitHub CI checks for tests and documentation.</li>
+        <li>MIT license metadata and license file.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>What is intentionally not in scope yet</h3>
+      <ul>
+        <li>No <code>CranberryForceField.createSystem</code> implementation yet.</li>
+        <li>No MD runner, reporters, restart behavior, or REMD runner yet.</li>
+        <li>No public 5SPN/RACER compatibility API.</li>
+        <li>No JAX/training/PySAGES functionality in the base package.</li>
+        <li>No public website build/deploy yet; docs currently build locally and in CI.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>Architecture Snapshot</h2>
+  <svg class="diagram" viewBox="0 0 1080 360" role="img" aria-label="Package architecture diagram">
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="#5b6670"></path>
+      </marker>
+    </defs>
+    <rect x="30" y="34" width="240" height="92" rx="8" fill="#eef4f8" stroke="#c9d6e2"></rect>
+    <text x="50" y="68" font-size="18" font-weight="700" fill="#18222c">User / Developer</text>
+    <text x="50" y="96" font-size="14" fill="#5b6670">cranberry CLI or Python API</text>
+
+    <rect x="415" y="30" width="250" height="110" rx="8" fill="#ffffff" stroke="#c9d6e2"></rect>
+    <text x="435" y="64" font-size="18" font-weight="700" fill="#18222c">cranberry package</text>
+    <text x="435" y="92" font-size="14" fill="#5b6670">cli.main, forcefield registry</text>
+    <text x="435" y="116" font-size="14" fill="#5b6670">data resources, validation</text>
+
+    <rect x="790" y="34" width="240" height="92" rx="8" fill="#f5f7fa" stroke="#c9d6e2"></rect>
+    <text x="810" y="68" font-size="18" font-weight="700" fill="#18222c">OpenMM</text>
+    <text x="810" y="96" font-size="14" fill="#5b6670">PDB parsing and topology</text>
+
+    <rect x="120" y="230" width="260" height="86" rx="8" fill="#ffffff" stroke="#c9d6e2"></rect>
+    <text x="140" y="263" font-size="18" font-weight="700" fill="#18222c">Packaged data</text>
+    <text x="140" y="291" font-size="14" fill="#5b6670">H5, XML, example PDBs</text>
+
+    <rect x="570" y="230" width="270" height="86" rx="8" fill="#ffffff" stroke="#c9d6e2"></rect>
+    <text x="590" y="263" font-size="18" font-weight="700" fill="#18222c">GitHub CI</text>
+    <text x="590" y="291" font-size="14" fill="#5b6670">install, pytest, Sphinx docs</text>
+
+    <line x1="270" y1="80" x2="415" y2="80" stroke="#5b6670" stroke-width="2" marker-end="url(#arrow)"></line>
+    <line x1="665" y1="80" x2="790" y2="80" stroke="#5b6670" stroke-width="2" marker-end="url(#arrow)"></line>
+    <line x1="500" y1="140" x2="310" y2="230" stroke="#5b6670" stroke-width="2" marker-end="url(#arrow)"></line>
+    <line x1="555" y1="140" x2="650" y2="230" stroke="#5b6670" stroke-width="2" marker-end="url(#arrow)"></line>
+  </svg>
+  <p class="caption">Figure 1. Current package foundation. Force-field system construction comes next; this report covers package identity, data packaging, inspection, validation, and CI.</p>
+
+  <h2>Commit History At A Glance</h2>
+  <div class="commit">
+    <h3><span class="hash">222089e</span> Initial cranberry-rna scaffold</h3>
+    <p>This commit created the clean package project in <code>CRANBERRY/cranberry</code>, separate from the legacy implementation. It established the distribution/import/CLI naming split.</p>
+    <ul>
+      <li><code>pyproject.toml</code> defines <code>cranberry-rna</code> as the installable distribution.</li>
+      <li><code>cranberry/</code> is the import package.</li>
+      <li><code>cranberry</code> is the console command.</li>
+      <li>Developer-only design docs and ADRs were placed under <code>docs/dev/</code>.</li>
+    </ul>
+  </div>
+
+  <div class="commit">
+    <h3><span class="hash">da3cca4</span> Add contributing guide and CI</h3>
+    <p>This commit made the project reproducible for collaborators and CI. The workflow installs the package with dev extras, runs tests, and builds public docs on a clean GitHub runner.</p>
+    <pre><code>python -m pip install -e ".[dev]"
+python -m pytest -q
+sphinx-build -b html docs docs/_build/html</code></pre>
+  </div>
+
+  <div class="commit">
+    <h3><span class="hash">271d484</span> Add packaged model assets and inspect validation</h3>
+    <p>This was the main Phase 2 implementation. It moved runtime assets into the package and introduced inspection and validation code paths.</p>
+    <ul>
+      <li>Added <code>cranberry-v1-alpha.1.h5</code> and <code>cranberry.xml</code>.</li>
+      <li>Added canonical PDB fixtures for <code>157d</code>, <code>1l2x</code>, <code>1zih</code>, and <code>2ntCG</code>.</li>
+      <li>Implemented <code>cranberry inspect</code>, <code>inspect data</code>, <code>inspect forcefield</code>, and <code>inspect input</code>.</li>
+      <li>Added validation rules for residues, bead names, virtual sites, and CONECT-derived bonds.</li>
+    </ul>
+  </div>
+
+  <div class="commit">
+    <h3><span class="hash">a51c2cc</span> Add MIT license and progress report</h3>
+    <p>This commit finalized the current placeholder licensing choice and added a compact developer progress report. The package metadata now includes the MIT license file in built distributions.</p>
+  </div>
+
+  <h2>Repository Layout After Phase 2</h2>
+  <table>
+    <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>cranberry/</code></td><td>Python import package.</td></tr>
+      <tr><td><code>cranberry/cli/main.py</code></td><td>CLI parser and implemented <code>inspect</code> commands.</td></tr>
+      <tr><td><code>cranberry/data/</code></td><td>Runtime model assets and example fixtures included in wheels.</td></tr>
+      <tr><td><code>cranberry/forcefield.py</code></td><td>Model registry and public force-group names.</td></tr>
+      <tr><td><code>cranberry/validation.py</code></td><td>Canonical PDB validation with OpenMM parsing.</td></tr>
+      <tr><td><code>tests/</code></td><td>Import, data, CLI, and validation tests.</td></tr>
+      <tr><td><code>docs/</code></td><td>Public Sphinx/MyST docs.</td></tr>
+      <tr><td><code>docs/dev/</code></td><td>Developer-only design notes, ADRs, and progress reports. Excluded from public docs build.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Packaged Runtime Assets</h2>
+  <p>The package now includes a small runtime data set. These files are intentionally inside the import package so they survive pip/conda installation.</p>
+  <table>
+    <thead><tr><th>Asset</th><th>Size</th><th>Source / Note</th></tr></thead>
+    <tbody>
+      <tr><td><code>data/forcefields/cranberry-v1-alpha.1.h5</code></td><td>113,756 B</td><td>Copied from GPU workshop <code>cranberry0.2.19.h5</code>.</td></tr>
+      <tr><td><code>data/xml/cranberry.xml</code></td><td>7,763 B</td><td>Copied from GPU workshop <code>6spn.vs.xml</code> and renamed.</td></tr>
+      <tr><td><code>data/examples/157d_cg_vs_conect.pdb</code></td><td>20,112 B</td><td>Canonical packaged fixture.</td></tr>
+      <tr><td><code>data/examples/1l2x_cg_vs_conect.pdb</code></td><td>22,808 B</td><td>Copied from legacy reference data.</td></tr>
+      <tr><td><code>data/examples/1zih_cg_vs_conect.pdb</code></td><td>10,477 B</td><td>Copied from GPU workshop.</td></tr>
+      <tr><td><code>data/examples/2ntCG_cg_vs_conect.pdb</code></td><td>1,985 B</td><td>Generated from the first two residues of <code>157d</code>; existing 6SPN <code>2ntCG</code> lacked <code>BC/BN</code>.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>Important fixture decision:</strong> the legacy 6SPN <code>2ntCG</code> files were not canonical because they did not include virtual sites. The packaged <code>2ntCG</code> fixture was regenerated from <code>157d_cg_vs_conect.pdb</code> so validation sees the same bead convention as the v1 model.
+  </div>
+
+  
+  <h2>Essential Code Review</h2>
+  <p>This section reviews the code that now defines the package boundary. These are the files to understand before porting force-field construction.</p>
+
+  <h3><code>pyproject.toml</code>: install contract</h3>
+  <p>The package now declares the distribution name, import package discovery, CLI entry point, OpenMM dependency, optional extras, and explicit runtime data inclusion.</p>
+  <pre><code>[project]
+name = "cranberry-rna"
+version = "1.0.0a1"
+requires-python = "&gt;=3.10"
+license = "MIT"
+dependencies = [
+  "openmm",
+]
+
+[project.scripts]
+cranberry = "cranberry.cli:main"
+
+[tool.setuptools.package-data]
+cranberry = [
+  "data/README.md",
+  "data/examples/*.pdb",
+  "data/forcefields/*.h5",
+  "data/xml/*.xml",
+]</code></pre>
+  <ul>
+    <li><strong>Why it matters:</strong> the wheel can be installed from scratch and still find <code>cranberry.xml</code>, the H5 parameter file, and fixtures.</li>
+    <li><strong>Review note:</strong> package-data patterns are intentionally explicit so generated <code>__pycache__</code> files do not enter wheels.</li>
+    <li><strong>Open question for later:</strong> when conda packaging starts, mirror the same runtime data contract in the recipe.</li>
+  </ul>
+
+  <h3><code>cranberry/data/resources.py</code>: resource lookup boundary</h3>
+  <p>This module removes the old <code>D_CGRNA</code> assumption. Code asks the installed package for data paths instead of assuming a source checkout layout.</p>
+  <pre><code>def data_path(relative_path: str) -&gt; Path:
+    resource = resources.files(_DATA_PACKAGE).joinpath(relative_path)
+    if not resource.is_file():
+        raise FileNotFoundError(f"Packaged data file not found: {relative_path}")
+    return Path(_STACK.enter_context(resources.as_file(resource)))</code></pre>
+  <ul>
+    <li><strong>Why it matters:</strong> this works in editable installs, wheels, and future zip-safe/resource-backed installs.</li>
+    <li><strong>Design tradeoff:</strong> a process-lifetime <code>ExitStack</code> keeps extracted resources alive for libraries that require real filesystem paths.</li>
+    <li><strong>Next usage:</strong> force-field construction should use this instead of string-building package-relative paths.</li>
+  </ul>
+
+  <h3><code>cranberry/forcefield.py</code>: model registry and names</h3>
+  <p>The registry is deliberately small. It maps a public model name to packaged assets and defines stable public force-group names.</p>
+  <pre><code>FORCE_GROUP_NAMES = (
+    "bond", "angle", "dihedral", "pucker",
+    "stacking35", "stacking55", "stacking33",
+    "pairing", "wca", "spline", "electrostatic",
+)
+
+_MODEL_REGISTRY = {
+    "cranberry-v1-alpha.1": ModelSpec(
+        name="cranberry-v1-alpha.1",
+        parameter_file="forcefields/cranberry-v1-alpha.1.h5",
+        xml_file="xml/cranberry.xml",
+        description="CRANBERRY v1 alpha model bundle.",
+    ),
+}</code></pre>
+  <ul>
+    <li><strong>Why it matters:</strong> callers can ask for <code>default</code> without knowing file names.</li>
+    <li><strong>Compatibility contract:</strong> force-group names are public; integer force-group IDs are not.</li>
+    <li><strong>Next usage:</strong> <code>CranberryForceField</code> should resolve model specs through this registry.</li>
+  </ul>
+
+  <h3><code>cranberry/validation.py</code>: canonical input gate</h3>
+  <p>The validator is intentionally strict about the CRANBERRY topology convention but allows a known terminal-phosphate edge case at chain starts.</p>
+  <pre><code>REQUIRED_VIRTUAL_SITES = {"BC", "BN"}
+EXPECTED_BEADS = {
+    "A": {"P", "S3", "S2", "R1", "A1", "A2", "BC", "BN"},
+    "G": {"P", "S3", "S2", "R1", "G1", "G2", "BC", "BN"},
+    "C": {"P", "S3", "S2", "Y1", "C1", "Y2", "BC", "BN"},
+    "U": {"P", "S3", "S2", "Y1", "U1", "Y2", "BC", "BN"},
+}</code></pre>
+  <pre><code>if missing == ["P"] and residue in chain_start_residues:
+    warnings.append(
+        f"chain {residue.chain.index} first residue is missing terminal phosphate P"
+    )
+elif missing:
+    errors.append(
+        f"residue {residue.index} {residue.name} missing expected beads: {', '.join(missing)}"
+    )</code></pre>
+  <ul>
+    <li><strong>Why it matters:</strong> bad inputs fail before system construction, where errors would be harder to understand.</li>
+    <li><strong>Current behavior:</strong> missing <code>P</code> at a chain start is a warning, not an error.</li>
+    <li><strong>New v1 requirement:</strong> preparation should offer an option to add a 5'-terminal phosphate when sugar-pucker physics requires phosphate context.</li>
+  </ul>
+
+  <h3><code>cranberry/cli/main.py</code>: first real command surface</h3>
+  <p>The CLI remains mostly roadmap placeholders, but <code>inspect</code> is now implemented and acts as the first user-visible diagnostic surface.</p>
+  <pre><code>inspect_parser = subparsers.add_parser(
+    "inspect", help="inspect package data, models, or inputs"
+)
+inspect_subparsers.add_parser("data", help="inspect packaged data")
+ff_parser = inspect_subparsers.add_parser("forcefield", help="inspect force-field model assets")
+input_parser = inspect_subparsers.add_parser("input", help="validate a canonical CRANBERRY input PDB")</code></pre>
+  <ul>
+    <li><strong>Why it matters:</strong> users can verify installation, packaged assets, and input validity before MD code exists.</li>
+    <li><strong>Exit-code contract:</strong> <code>inspect input</code> returns <code>0</code> for valid input and <code>1</code> for invalid input.</li>
+    <li><strong>Next usage:</strong> <code>prepare</code>, <code>cg</code>, <code>md</code>, <code>remd</code>, and <code>energy</code> should follow the same thin-CLI-over-library-functions pattern.</li>
+  </ul>
+
+<h2>Behavior Exposed By The Code</h2>
+  <div class="two-col">
+    <div class="card">
+      <h3>Package data access</h3>
+      <p><code>cranberry.data.data_path</code> resolves package resources into filesystem paths for APIs that require real paths, such as HDF5 readers or OpenMM XML/PDB loaders.</p>
+      <pre><code>from cranberry.data import data_path
+
+xml_path = data_path("xml/cranberry.xml")
+h5_path = data_path("forcefields/cranberry-v1-alpha.1.h5")</code></pre>
+    </div>
+    <div class="card">
+      <h3>Model registry</h3>
+      <p><code>cranberry.forcefield</code> maps <code>default</code> to the current alpha model and exposes stable force-group names for future energy decomposition.</p>
+      <pre><code>from cranberry.forcefield import get_model_spec
+
+spec = get_model_spec("default")
+print(spec.name)
+print(spec.parameter_path)</code></pre>
+    </div>
+  </div>
+
+  <h3>Validation logic</h3>
+  <p>The validator uses <code>openmm.app.PDBFile</code> and checks the canonical v1 topology convention. It allows a missing terminal phosphate on the first residue of each chain, which appears in the current reference fixtures.</p>
+  <pre><code>result = validate_canonical_pdb("input.pdb")
+if not result.valid:
+    for error in result.errors:
+        print(error)</code></pre>
+
+  <h3>CLI inspection</h3>
+  <p>The CLI now has a real inspect namespace. Other commands remain roadmap placeholders until system construction and simulation are ported.</p>
+  <pre><code>cranberry inspect
+cranberry inspect data
+cranberry inspect forcefield
+cranberry inspect input cranberry/data/examples/2ntCG_cg_vs_conect.pdb</code></pre>
+
+  <h2>Actual Results</h2>
+  <div class="three-col">
+    <div class="card">
+      <h3><code>cranberry inspect</code></h3>
+      <pre><code>cranberry-rna 1.0.0a1
+default model: cranberry-v1-alpha.1
+available models:
+  - cranberry-v1-alpha.1
+inspect targets: data, forcefield, input</code></pre>
+    </div>
+    <div class="card">
+      <h3><code>inspect forcefield</code></h3>
+      <pre><code>model: cranberry-v1-alpha.1
+description: CRANBERRY v1 alpha model bundle.
+parameter file: .../cranberry-v1-alpha.1.h5
+xml file: .../cranberry.xml
+force groups:
+  - bond
+  - angle
+  - dihedral
+  - pucker
+  - stacking35
+  - stacking55
+  - stacking33
+  - pairing
+  - wca
+  - spline
+  - electrostatic</code></pre>
+    </div>
+    <div class="card">
+      <h3><code>inspect input</code></h3>
+      <pre><code>input: cranberry/data/examples/2ntCG_cg_vs_conect.pdb
+valid: True
+atoms: 15
+residues: 2
+bonds: 18
+frames: 1
+warning: chain 0 first residue is missing terminal phosphate P</code></pre>
+    </div>
+  </div>
+
+  <h2>Package Build Evidence</h2>
+  <p>A local wheel build succeeded and included the expected package data plus the MIT license. The earlier package-data pattern accidentally included <code>__pycache__</code>; that was corrected by narrowing package-data patterns to explicit file types.</p>
+  <pre><code>cranberry/data/examples/157d_cg_vs_conect.pdb
+cranberry/data/examples/1l2x_cg_vs_conect.pdb
+cranberry/data/examples/1zih_cg_vs_conect.pdb
+cranberry/data/examples/2ntCG_cg_vs_conect.pdb
+cranberry/data/forcefields/cranberry-v1-alpha.1.h5
+cranberry/data/xml/cranberry.xml
+cranberry_rna-1.0.0a1.dist-info/licenses/LICENSE</code></pre>
+
+  <h2>Test And CI Evidence</h2>
+  <table>
+    <thead><tr><th>Check</th><th>Result</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>python -m pytest -q</code></td><td class="ok">9 passed</td><td>Import, data, registry, CLI, and validation tests.</td></tr>
+      <tr><td><code>sphinx-build -b html docs docs/_build/html</code></td><td class="ok">succeeded</td><td>Public docs build; <code>docs/dev</code> excluded.</td></tr>
+      <tr><td><code>python -m build</code></td><td class="ok">succeeded</td><td>Wheel and sdist build; package data included.</td></tr>
+      <tr><td>GitHub Actions CI</td><td class="ok">success</td><td>Latest three pushed workflows completed successfully.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Risk Review From Code Reading</h2>
+  <div class="two-col">
+    <div class="card">
+      <h3>Known risks</h3>
+      <ul>
+        <li><code>cranberry-v1-alpha.1.h5</code> is a copied alpha asset; final v1 parameter bundling is still pending.</li>
+        <li>Validation checks topology convention, not physical correctness.</li>
+        <li>OpenMM is now a base dependency because validation and future MD require it.</li>
+        <li>The public docs are skeletal; developer docs carry most design detail for now.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Mitigations already in place</h3>
+      <ul>
+        <li>CI installs from scratch and runs tests/docs.</li>
+        <li>Runtime assets are included in wheel builds.</li>
+        <li>Legacy executable output generation is documented separately via the GPU workshop path.</li>
+        <li>Developer docs and ADRs explain why the package/API/output choices were made.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>Recommended Next PR / Phase</h2>
+  <p>The next meaningful implementation step is the force-field core:</p>
+  <ul>
+    <li>Introduce <code>CranberryForceField</code>.</li>
+    <li>Port only the canonical 6SPN/CRANBERRY system-building path.</li>
+    <li>Use packaged <code>cranberry.xml</code> and <code>cranberry-v1-alpha.1.h5</code>.</li>
+    <li>Add fixed-coordinate energy tests against workshop-generated reference values.</li>
+    <li>Keep MD running/reporters for the following phase, after energy construction is stable.</li>
+    <li>Add a preparation option for inserting a 5'-terminal phosphate when needed, because current terminal nucleotides are C3'-endo-only and the sugar-pucker model requires phosphate context.</li>
+  </ul>
+
+  <p class="small">Generated for developer review only. This file is intentionally not committed yet and should remain under <code>docs/dev/progress/</code> if accepted.</p>
+</main>
+</body>
+</html>

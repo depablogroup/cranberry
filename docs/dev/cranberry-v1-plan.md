@@ -106,6 +106,7 @@ Planned commands:
 Rules:
 
 - `cranberry md` requires prepared canonical CG input.
+- Provide an option in the preparation workflow to add a 5'-terminal phosphate when needed. Current terminal nucleotides are C3'-endo-only and the sugar-pucker model requires phosphate context.
 - Strict validation is default.
 - `--outdir` is supported for run commands and defaults to `.`.
 - Platform is selectable; default lets OpenMM choose. Tests use CPU.
