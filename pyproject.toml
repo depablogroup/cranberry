@@ -8,7 +8,7 @@ version = "1.0.0a1"
 description = "Coarse-grained RNA simulations with OpenMM."
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "TBD"}
+license = "LicenseRef-TBD"
 authors = [
   {name = "CRANBERRY developers"}
 ]
@@ -21,7 +21,9 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Topic :: Scientific/Engineering :: Chemistry",
 ]
-dependencies = []
+dependencies = [
+  "openmm",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -50,16 +52,21 @@ all = [
 cranberry = "cranberry.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/REPLACE-ME/cranberry-rna"
-Documentation = "https://github.com/REPLACE-ME/cranberry-rna"
-Repository = "https://github.com/REPLACE-ME/cranberry-rna"
+Homepage = "https://github.com/yihengwuKP/cranberry"
+Documentation = "https://github.com/yihengwuKP/cranberry"
+Repository = "https://github.com/yihengwuKP/cranberry"
 
 [tool.setuptools]
 packages = {find = {include = ["cranberry*"]}}
 include-package-data = true
 
 [tool.setuptools.package-data]
-cranberry = ["data/**/*"]
+cranberry = [
+  "data/README.md",
+  "data/examples/*.pdb",
+  "data/forcefields/*.h5",
+  "data/xml/*.xml",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

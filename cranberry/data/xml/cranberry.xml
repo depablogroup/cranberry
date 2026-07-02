@@ -1,0 +1,156 @@
+<Forcefield>
+    <AtomTypes>
+        <!--RNA coarse grained beads-->
+        <Type name="P" class="Phosphate" element= "P"  mass = "94.97"/>
+        <Type name="S3" class="Sugar"  element="C" mass = "56.062"/> 
+        <Type name="S2" class="Sugar"  element="C" mass = "43.043"/> 
+        <Type name="R1" class="Base"  element="C" mass = "53.022"/>
+        <Type name="A1" class="Base"  element="N" mass = "42.030"/>
+        <Type name="A2" class="Base"  element="C" mass = "39.015"/>
+        <Type name="G1" class="Base"  element="O" mass = "43.014"/>
+        <Type name="G2" class="Base"  element="N" mass = "54.030"/>
+        <Type name="Y1" class="Base"  element="C" mass = "26.016"/>
+        <Type name="Y2" class="Base"  element="H" mass = "42.006"/>
+        <Type name="U1" class="Base"  element="O" mass = "43.014"/>
+        <Type name="C1" class="Base"  element="N" mass = "42.030"/>
+        <Type name="BC" class="Base"  element="He" mass = "0"/>
+        <Type name="BN" class="Base"  element="Ne" mass = "0"/>
+    </AtomTypes>
+    <Residues>
+        <Residue name="A">
+            <AllowPatch name="5TER"/>
+            <AllowPatch name="single_nt"/>
+            <AllowPatch name="5TER_P"/>
+            <AllowPatch name="3TER"/>
+            <AllowPatch name="single_nt_P"/>
+            <ExternalBond atomName="P"/>
+            <Atom name="P" type="P"/>
+            <Atom name="S3" type="S3"/>
+            <Atom name="S2" type="S2"/>
+            <Atom name="R1" type="R1"/>
+            <Atom name="A1" type="A1"/>
+            <Atom name="A2" type="A2"/>
+            <Atom name="BC" type="BC"/>
+            <VirtualSite type="average3"  siteName="BC" atomName1="R1" atomName2="A1" atomName3="A2" weight1="0.333333333" weight2="0.333333333" weight3="0.333333333"/>
+            <Atom name="BN" type="BN"/>
+            <VirtualSite type="outOfPlane"  siteName="BN" atomName1="R1" atomName2="A1" atomName3="A2" weight12="0.333333333" weight13="0.333333333" weightCross="1"/>
+            <Bond atomName1="P" atomName2="S3"/>
+            <Bond atomName1="S3" atomName2="S2"/>
+            <Bond atomName1="S2" atomName2="R1"/>
+            <Bond atomName1="R1" atomName2="A1"/>
+            <Bond atomName1="R1" atomName2="A2"/>
+            <Bond atomName1="A1" atomName2="A2"/>
+            <Bond atomName1="R1" atomName2="BC"/>
+            <Bond atomName1="A1" atomName2="BC"/>
+            <Bond atomName1="BC" atomName2="BN"/>
+            <ExternalBond atomName="S3"/>
+        </Residue>
+        <Residue name="U">
+            <AllowPatch name="3TER"/>
+            <AllowPatch name="single_nt"/>
+            <AllowPatch name="5TER_P"/>
+            <AllowPatch name="5TER"/>
+            <AllowPatch name="single_nt_P"/>
+            <ExternalBond atomName="P"/>
+            <Atom name="P" type="P"/>
+            <Atom name="S3" type="S3"/>
+            <Atom name="S2" type="S2"/>
+            <Atom name="Y1" type="Y1"/>
+            <Atom name="Y2" type="Y2"/>
+            <Atom name="U1" type="U1"/>
+            <Atom name="BC" type="BC"/>
+            <VirtualSite type="average3"  siteName="BC" atomName1="Y1" atomName2="U1" atomName3="Y2" weight1="0.333333333" weight2="0.333333333" weight3="0.333333333"/>
+            <Atom name="BN" type="BN"/>
+            <VirtualSite type="outOfPlane"  siteName="BN" atomName1="Y1" atomName2="U1" atomName3="Y2" weight12="0.333333333" weight13="0.333333333" weightCross="1"/>
+            <Bond atomName1="P" atomName2="S3"/>
+            <Bond atomName1="S3" atomName2="S2"/>
+            <Bond atomName1="S2" atomName2="Y1"/>
+            <Bond atomName1="Y1" atomName2="Y2"/>
+            <Bond atomName1="Y1" atomName2="U1"/>
+            <Bond atomName1="U1" atomName2="Y2"/>
+            <Bond atomName1="Y1" atomName2="BC"/>
+            <Bond atomName1="U1" atomName2="BC"/>
+            <Bond atomName1="BC" atomName2="BN"/>
+            <ExternalBond atomName="S3"/>
+        </Residue>
+        <Residue name="G">
+            <AllowPatch name="3TER"/>
+            <AllowPatch name="single_nt"/>
+            <AllowPatch name="5TER_P"/>
+            <AllowPatch name="5TER"/>
+            <AllowPatch name="single_nt_P"/>
+            <ExternalBond atomName="P"/>
+            <Atom name="P" type="P"/>
+            <Atom name="S3" type="S3"/>
+            <Atom name="S2" type="S2"/>
+            <Atom name="R1" type="R1"/>
+            <Atom name="G1" type="G1"/>
+            <Atom name="G2" type="G2"/>
+            <Atom name="BC" type="BC"/>
+            <VirtualSite type="average3"  siteName="BC" atomName1="R1" atomName2="G1" atomName3="G2" weight1="0.333333333" weight2="0.333333333" weight3="0.333333333"/>
+            <Atom name="BN" type="BN"/>
+            <VirtualSite type="outOfPlane"  siteName="BN" atomName1="R1" atomName2="G1" atomName3="G2" weight12="0.333333333" weight13="0.333333333" weightCross="1"/>
+            <Bond atomName1="P" atomName2="S3"/>
+            <Bond atomName1="S3" atomName2="S2"/>
+            <Bond atomName1="S2" atomName2="R1"/>
+            <Bond atomName1="R1" atomName2="G1"/>
+            <Bond atomName1="R1" atomName2="G2"/>
+            <Bond atomName1="G1" atomName2="G2"/>
+            <Bond atomName1="R1" atomName2="BC"/>
+            <Bond atomName1="G1" atomName2="BC"/>
+            <Bond atomName1="BC" atomName2="BN"/>
+            <ExternalBond atomName="S3"/>
+        </Residue>
+        <Residue name="C">
+            <AllowPatch name="3TER"/>
+            <AllowPatch name="single_nt"/>
+            <AllowPatch name="5TER_P"/>
+            <AllowPatch name="5TER"/>
+            <AllowPatch name="single_nt_P"/>
+            <ExternalBond atomName="P"/>
+            <Atom name="P" type="P"/>
+            <Atom name="S3" type="S3"/>
+            <Atom name="S2" type="S2"/>
+            <Atom name="Y1" type="Y1"/>
+            <Atom name="Y2" type="Y2"/>
+            <Atom name="C1" type="C1"/>
+            <Atom name="BC" type="BC"/>
+            <VirtualSite type="average3"  siteName="BC" atomName1="Y1" atomName2="C1" atomName3="Y2" weight1="0.333333333" weight2="0.333333333" weight3="0.333333333"/>
+            <Atom name="BN" type="BN"/>
+            <VirtualSite type="outOfPlane"  siteName="BN" atomName1="Y1" atomName2="C1" atomName3="Y2" weight12="0.333333333" weight13="0.333333333" weightCross="1"/>
+            <Bond atomName1="P" atomName2="S3"/>
+            <Bond atomName1="S3" atomName2="S2"/>
+            <Bond atomName1="S2" atomName2="Y1"/>
+            <Bond atomName1="Y1" atomName2="Y2"/>
+            <Bond atomName1="Y1" atomName2="C1"/>
+            <Bond atomName1="C1" atomName2="Y2"/>
+            <Bond atomName1="Y1" atomName2="BC"/>
+            <Bond atomName1="C1" atomName2="BC"/>
+            <Bond atomName1="BC" atomName2="BN"/>
+            <ExternalBond atomName="S3"/>
+        </Residue>
+    </Residues>
+    <Patches>
+        <Patch name="5TER">
+            <RemoveAtom name="P"/>
+            <RemoveBond atomName1="P" atomName2="S3"/>
+            <RemoveExternalBond atomName="P"/>
+        </Patch>
+        <Patch name="5TER_P">
+            <RemoveExternalBond atomName="P"/>
+        </Patch>
+        <Patch name="3TER">
+            <RemoveExternalBond atomName="S3"/>
+        </Patch>
+        <Patch name="single_nt">
+            <RemoveExternalBond atomName="P"/>
+            <RemoveAtom name="P"/>
+            <RemoveBond atomName1="P" atomName2="S3"/>
+            <RemoveExternalBond atomName="S3"/>
+        </Patch>
+        <Patch name="single_nt_P">
+            <RemoveExternalBond atomName="P"/>
+            <RemoveExternalBond atomName="S3"/>
+        </Patch>
+    </Patches>
+</Forcefield>
