@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CRANBERRY Development Progress</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172026;
+      --muted: #5d6972;
+      --line: #d9dee3;
+      --panel: #f6f8fa;
+      --accent: #0b6bcb;
+      --ok: #16794c;
+    }
+    body {
+      margin: 0;
+      font: 15px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: white;
+    }
+    main {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 40px 28px 56px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 32px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+    h2 {
+      margin: 32px 0 12px;
+      font-size: 20px;
+      letter-spacing: 0;
+    }
+    p {
+      margin: 0 0 14px;
+      color: var(--muted);
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.94em;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 18px 0 30px;
+    }
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 4px 10px;
+      color: var(--muted);
+      background: var(--panel);
+    }
+    .timeline {
+      display: grid;
+      gap: 14px;
+    }
+    .commit {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px 18px 16px;
+      background: white;
+    }
+    .commit header {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      align-items: baseline;
+      margin-bottom: 10px;
+    }
+    .hash {
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .status {
+      color: var(--ok);
+      font-weight: 700;
+    }
+    ul {
+      margin: 10px 0 0 20px;
+      padding: 0;
+    }
+    li { margin: 5px 0; }
+    .checks {
+      border-left: 4px solid var(--ok);
+      padding: 12px 16px;
+      background: var(--panel);
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>CRANBERRY Development Progress</h1>
+  <p>This developer-only page summarizes the current repository state through the latest three commits. It is kept in GitHub under <code>docs/dev/</code> and excluded from the public Sphinx build.</p>
+
+  <div class="meta">
+    <span class="pill">Repository: <code>yihengwuKP/cranberry</code></span>
+    <span class="pill">Branch: <code>main</code></span>
+    <span class="pill">Updated: 2026-07-02</span>
+  </div>
+
+  <h2>Recent Commits</h2>
+  <section class="timeline" aria-label="Recent commits">
+    <article class="commit">
+      <header>
+        <span class="hash"><code>271d484</code></span>
+        <strong>Add packaged model assets and inspect validation</strong>
+        <span class="status">CI passed</span>
+      </header>
+      <p>Phase 2 foundation: the package now carries runtime model assets and can inspect packaged data, force-field metadata, and canonical input PDBs.</p>
+      <ul>
+        <li>Added <code>cranberry-v1-alpha.1.h5</code>, <code>cranberry.xml</code>, and example fixtures for <code>157d</code>, <code>1l2x</code>, <code>1zih</code>, and <code>2ntCG</code>.</li>
+        <li>Implemented package data lookup, model registry, force-group names, and canonical PDB validation.</li>
+        <li>Implemented <code>cranberry inspect</code>, <code>inspect data</code>, <code>inspect forcefield</code>, and <code>inspect input</code>.</li>
+        <li>Added tests for packaged assets, registry resolution, CLI inspection, and fixture validation.</li>
+      </ul>
+    </article>
+
+    <article class="commit">
+      <header>
+        <span class="hash"><code>da3cca4</code></span>
+        <strong>Add contributing guide and CI</strong>
+        <span class="status">CI passed</span>
+      </header>
+      <p>Phase 1 infrastructure: GitHub Actions and contributor workflow are now documented and enforced on push/PR.</p>
+      <ul>
+        <li>Added <code>CONTRIBUTING.md</code> with development environment, test, docs, and repository-layout guidance.</li>
+        <li>Added <code>.github/workflows/ci.yml</code> to install <code>.[dev]</code>, run pytest, and build docs on Python 3.11.</li>
+      </ul>
+    </article>
+
+    <article class="commit">
+      <header>
+        <span class="hash"><code>222089e</code></span>
+        <strong>Initial cranberry-rna scaffold</strong>
+        <span class="status">baseline established</span>
+      </header>
+      <p>Phase 1 scaffold: the clean package project was created separately from the legacy <code>OpenMM-CGRNA</code> reference repo.</p>
+      <ul>
+        <li>Added <code>pyproject.toml</code>, import package <code>cranberry</code>, CLI stub, tests, Sphinx/MyST docs, and developer design notes.</li>
+        <li>Established the package identity: distribution <code>cranberry-rna</code>, import <code>cranberry</code>, CLI <code>cranberry</code>.</li>
+      </ul>
+    </article>
+  </section>
+
+  <h2>Current Verification</h2>
+  <div class="checks">
+    <p>Latest local checks before this progress note:</p>
+    <ul>
+      <li><code>python -m pytest -q</code>: 9 passed.</li>
+      <li><code>sphinx-build -b html docs docs/_build/html</code>: succeeded.</li>
+      <li><code>python -m build</code>: succeeded and included only intended package data.</li>
+      <li>GitHub Actions CI on <code>main</code>: passed for the Phase 2 commit.</li>
+    </ul>
+  </div>
+</main>
+</body>
+</html>

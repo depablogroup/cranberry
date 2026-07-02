@@ -7,8 +7,9 @@ name = "cranberry-rna"
 version = "1.0.0a1"
 description = "Coarse-grained RNA simulations with OpenMM."
 readme = "README.md"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
-license = "LicenseRef-TBD"
+license = "MIT"
 authors = [
   {name = "CRANBERRY developers"}
 ]
