@@ -203,6 +203,7 @@ During migration, use `CRANBERRY_workshop/cranberry-workshop-919771f4-gpu/` as t
   - training
   - PySAGES
   - manual/HPC
+- Before public alpha/beta release, enable GitHub branch protection or a ruleset that requires the `CI` workflow to pass on `main`. This may require making the repository public or using a GitHub plan that supports required checks on private repositories.
 
 ## Benchmarks
 
