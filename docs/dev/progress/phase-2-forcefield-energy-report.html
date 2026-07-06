@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CRANBERRY Phase 2 Force Field And Energy Review</title>
+  <style>
+    :root { --ink:#18222c; --muted:#5b6670; --line:#d9e0e7; --soft:#f5f7fa; --accent:#0b66c3; --ok:#137348; --warn:#9a5b00; }
+    body { margin:0; color:var(--ink); font:15px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    main { max-width:1120px; margin:0 auto; padding:36px 28px 72px; }
+    h1 { margin:0 0 10px; font-size:32px; line-height:1.15; }
+    h2 { margin:32px 0 12px; padding-top:22px; border-top:1px solid var(--line); font-size:22px; }
+    h3 { margin:20px 0 8px; font-size:17px; }
+    p { margin:0 0 12px; color:var(--muted); }
+    code, pre { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace; }
+    pre { margin:10px 0 0; padding:13px 15px; overflow:auto; color:#edf5ff; background:#0f1720; border-radius:8px; font-size:13px; }
+    table { width:100%; border-collapse:collapse; margin:12px 0 0; font-size:14px; }
+    th, td { border-bottom:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+    th { background:var(--soft); }
+    ul { margin:8px 0 0 20px; padding:0; }
+    li { margin:5px 0; }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+    .card { border:1px solid var(--line); border-radius:8px; padding:15px; }
+    .ok { color:var(--ok); font-weight:700; }
+    .warn { color:var(--warn); font-weight:700; }
+    .small { font-size:13px; color:var(--muted); }
+  </style>
+</head>
+<body>
+<main>
+  <h1>CRANBERRY Phase 2 Force Field And Energy Review</h1>
+  <p>Developer review for the Phase 2 implementation that turns the packaged CRANBERRY alpha model into an OpenMM system builder with CPU energy decomposition.</p>
+
+  <h2>Scope</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>Implemented</h3>
+      <ul>
+        <li>Normalized one packaged alpha H5 containing bonded, sugar, WCA, spline, stacking, and pairing parameters.</li>
+        <li>Baked legacy <code>--angle-scaling 0.1</code> into angle spring constants.</li>
+        <li>Added <code>CranberryForceField.createSystem()</code>.</li>
+        <li>Added <code>cranberry.energy.compute_energy()</code>.</li>
+        <li>Added <code>cranberry energy PDB</code> CLI with text and JSON output.</li>
+        <li>Added CPU energy regression tests for all four bundled fixtures.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Still out of scope</h3>
+      <ul>
+        <li>MD runner, reporters, checkpointing, and output directory contract.</li>
+        <li>REMD/openmmtools integration.</li>
+        <li>Preparation/coarse-graining and 5'-phosphate insertion workflow.</li>
+        <li>Independent workshop-log parity audit for final scientific release.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>Important Code Changes</h2>
+  <table>
+    <thead><tr><th>Path</th><th>Review Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>cranberry/forcefield.py</code></td><td>Now contains the canonical OpenMM force construction path: XML particles/virtual sites, bonded terms, sugar pucker, anisotropic stacking/pairing, WCA, spline, and Debye-Huckel.</td></tr>
+      <tr><td><code>cranberry/energy.py</code></td><td>Creates a short-lived OpenMM <code>Simulation</code> on a selected platform and reports total plus named force-group energies.</td></tr>
+      <tr><td><code>cranberry/cli/main.py</code></td><td>Adds <code>cranberry energy</code>. CLI remains thin: parse strings/numbers, call <code>compute_energy()</code>, print table or JSON.</td></tr>
+      <tr><td><code>cranberry/data/forcefields/cranberry-v1-alpha.1.h5</code></td><td>Merged from legacy <code>6spn.h5</code> and <code>cranberry0.2.19.h5</code>. Metadata records provenance and baked-in angle scaling.</td></tr>
+      <tr><td><code>tests/test_energy.py</code></td><td>Locks CPU energy regressions for <code>2ntCG</code>, <code>157d</code>, <code>1l2x</code>, and <code>1zih</code>.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Code Review Details</h2>
+  <p>This section is intentionally written like a PR review for a colleague: it shows the important code paths and the choices that deserve inspection.</p>
+
+  <h3>Model Asset Normalization</h3>
+  <p>The packaged model is now a single H5 asset. This removes the old runtime split between <code>6spn.h5</code>, <code>cranberry0.2.19.h5</code>, <code>--nonbonded-para</code>, and <code>--base-para</code>. The old <code>--angle-scaling 0.1</code> default is baked into the angle spring constants.</p>
+  <pre><code>with h5py.File(tmp_path, "w") as out, h5py.File(nonbonded_path, "r") as nb, h5py.File(bonded_path, "r") as bonded:
+    for key in nb.keys():
+        nb.copy(key, out)
+    for key in ["bond", "angle", "dihedral", "sugar"]:
+        bonded.copy(key, out)
+    out.attrs["cranberry_model"] = "cranberry-v1-alpha.1"
+    out.attrs["nonbonded_source"] = "OpenMM-CGRNA data/para/h5/cranberry0.2.19.h5"
+    out.attrs["bonded_source"] = "OpenMM-CGRNA data/para/h5/6spn.h5"
+    out.attrs["angle_scaling_baked_in"] = 0.1</code></pre>
+  <p>The test locks this decision:</p>
+  <pre><code>with h5py.File(data_path("forcefields/cranberry-v1-alpha.1.h5"), "r") as h5:
+    assert {"bond", "angle", "dihedral", "sugar", "wca", "spline", "stacking35", "stacking55", "stacking33", "pairing"} &lt;= set(h5.keys())
+    assert h5.attrs["cranberry_model"] == "cranberry-v1-alpha.1"
+    assert h5.attrs["angle_scaling_baked_in"] == 0.1</code></pre>
+
+  <h3>Public System Builder</h3>
+  <p><code>CranberryForceField</code> follows the OpenMM shape: construct the force field object, then call <code>createSystem()</code> with an OpenMM topology. Temperature and salt enter here because Debye-Huckel electrostatics are temperature/salt dependent.</p>
+  <pre><code>class CranberryForceField:
+    def __init__(self, model: str = "default"):
+        self.spec = get_model_spec(model)
+        self._xml = app.ForceField(str(self.spec.xml_path))
+        self._params = _load_parameters(self.spec.parameter_path)
+
+    def createSystem(
+        self,
+        topology: app.Topology,
+        *,
+        positions=None,
+        temperature=298 * unit.kelvin,
+        salt_concentration=150 * unit.millimolar,
+        enabled_forces: Iterable[str] | None = None,
+    ) -&gt; mm.System:</code></pre>
+  <p>The force addition order mirrors the canonical legacy workflow, with <code>pucker</code> included as a named force group.</p>
+  <pre><code>if "bond" in enabled:
+    self._add_bonds(system, data, sugar_indices)
+if "angle" in enabled:
+    angle_indices_all = self._add_angles(system, data, sugar_indices)
+if "dihedral" in enabled:
+    dihedral_indices = self._add_dihedrals(system, data, sugar_indices, angle_indices_all)
+if "pucker" in enabled:
+    self._add_sugar_pucker(system, topology)
+if "stacking35" in enabled:
+    self._add_stacking(system, data, "35")
+...
+if "electrostatic" in enabled:
+    self._add_debye_huckel(system, data, temperature, salt_concentration)</code></pre>
+
+  <h3>Spline Port</h3>
+  <p>The spline implementation is a direct port of the legacy <code>6spn + high spline + base-form aniso</code> behavior. It uses the 12-type high-resolution mapping and <code>base_idx_lim=3</code>, so spline handles P/S interactions while base-base interactions are handled by stacking/pairing.</p>
+  <pre><code>def _add_spline(self, system: mm.System, data: _TopologyData, base_idx_lim: int) -&gt; None:
+    y_nodes = self._params["spline_y_nodes"]
+    x_lim = self._params["spline_x_lim"]
+    n_types = y_nodes.shape[0]
+    expr = "0"
+    active_pairs: list[tuple[int, int]] = []
+    for i, j in product(range(n_types), range(n_types)):
+        if i &lt; base_idx_lim or j &lt; base_idx_lim:
+            expr += f"+delta(type1-{i})*delta(type2-{j})*U{i}{j}(r)"
+            active_pairs.append((i, j))</code></pre>
+  <p>The OpenMM tabulated functions come directly from the H5 nodes. Virtual sites are excluded by applying the interaction group only to real sites.</p>
+  <pre><code>for i, j in active_pairs:
+    force.addTabulatedFunction(
+        f"U{i}{j}",
+        mm.Continuous1DFunction(y_nodes[i, j], float(x_lim[i, j, 0]), float(x_lim[i, j, 1])),
+    )
+force.addPerParticleParameter("type")
+for name in data.atom_names:
+    force.addParticle([HIGH_RES_SPLINE_TYPES[name]])
+force.addInteractionGroup(data.real_site_ids, data.real_site_ids)
+force.createExclusionsFromBonds(data.bonds, 3)</code></pre>
+
+  <h3>Sugar Pucker Port</h3>
+  <p>The sugar-pucker path uses the simpler single-force mode instead of the legacy <code>all-log</code> reporter-oriented path. This keeps Phase 2 focused on correct system energy construction; detailed sugar logging can return with MD/reporters.</p>
+  <pre><code>def _add_sugar_pucker(self, system: mm.System, topology: app.Topology) -&gt; None:
+    descriptors = [name for name in self._params["sugar_sigmoid"] if name != "intercept"]
+    expression = self._sugar_pucker_expression(descriptors)
+    force = mm.CustomCompoundBondForce(6, expression)
+    force.addGlobalParameter("a0", 2 * np.log(99) / 108)
+    force.addGlobalParameter("P0", 90)
+    force.addGlobalParameter("kg", float(np.ravel(self._params["sugar_gaussian"]["k"])[0]))
+    force.addGlobalParameter("dU_C2endo", float(np.ravel(self._params["sugar_dU"])[0]))</code></pre>
+  <p>The expression keeps the legacy sigmoid/gaussian interpolation between C3'-endo and C2'-endo terms.</p>
+  <pre><code>expression = "((1-sigmoid)*U3+sigmoid*(U2+dU_C2endo))*(1-gaussian); "
+expression += "sigmoid=1/(1+exp(-a0*(P-P0))); "
+expression += "gaussian=kg*exp(-a1*(P-P1)^2); "
+expression += "P=" + self._phase_angle_expression(descriptors)
+expression += "U3=" + self._sugar_u_expression(descriptors, state="3")
+expression += "U2=" + self._sugar_u_expression(descriptors, state="2")</code></pre>
+
+  <h3>Energy API And CLI</h3>
+  <p>The Python energy API validates input, builds the system, uses the PDB-provided virtual-site coordinates, and reports total plus force-group energies. It intentionally does not call <code>Context.computeVirtualSites()</code> in the regression path, matching the legacy workshop <code>posthoc_energy.csv</code> evaluator.</p>
+  <pre><code>def compute_energy(...):
+    validation = validate_canonical_pdb(pdb_path)
+    validation.raise_for_errors()
+
+    pdb = app.PDBFile(str(pdb_path))
+    forcefield = CranberryForceField(model)
+    system = forcefield.createSystem(
+        pdb.topology,
+        positions=pdb.positions,
+        temperature=temperature,
+        salt_concentration=salt_concentration,
+    )
+    ...
+    simulation.context.setPositions(pdb.positions)
+    simulation.context.computeVirtualSites()</code></pre>
+  <p>The CLI remains thin and converts shell strings/numbers into API arguments.</p>
+  <pre><code>energy_parser = subparsers.add_parser("energy", help="compute total and decomposed CRANBERRY energies")
+energy_parser.add_argument("pdb", type=Path)
+energy_parser.add_argument("--temperature", type=float, default=298.0)
+energy_parser.add_argument("--salt", type=float, default=150.0)
+energy_parser.add_argument("--platform", default="CPU")
+energy_parser.add_argument("--json", action="store_true")
+energy_parser.set_defaults(func=_energy)</code></pre>
+
+  <h3>Regression Tests</h3>
+  <p>The new tests assert both construction shape and numeric energy behavior. These are not final workshop parity proofs; they are fast CPU regression guards for the packaged implementation.</p>
+  <pre><code>def test_create_system_adds_named_forces():
+    pdb = app.PDBFile(str(data_path("examples/2ntCG_cg_vs_conect.pdb")))
+    system = CranberryForceField().createSystem(pdb.topology, positions=pdb.positions)
+    names = {system.getForce(index).getName() for index in range(system.getNumForces())}
+    assert {"bond", "angle", "dihedral", "pucker", "stacking35", "stacking55", "stacking33", "pairing", "wca", "spline", "electrostatic"} &lt;= names</code></pre>
+  <pre><code>@pytest.mark.parametrize("filename,expected", EXPECTED_ENERGIES.items())
+def test_energy_regression_cpu(filename, expected):
+    report = compute_energy(data_path(f"examples/{filename}"), platform="CPU")
+    values = report.as_kj_per_mol()
+    for name, value in expected.items():
+        assert values[name] == pytest.approx(value, abs=1e-6)</code></pre>
+
+  <h2>Reference Energies</h2>
+  <p>Values are generated from the GPU workshop copy of <code>OpenMM-CGRNA</code> using <code>run_rna.py --dry-run --post-run-reporting --use-pdb</code>, <code>pucker-mode all</code>, <code>base-form aniso</code>, high-resolution spline, <code>cranberry0.2.19.h5</code>, and <code>angle-scaling 0.1</code>. Cranberry reports <code>pucker</code> as legacy <code>pucker + terminal_U3</code>.</p>
+  <table>
+    <thead><tr><th>Fixture</th><th>Total kJ/mol</th><th>Bond</th><th>Angle</th><th>Dihedral</th><th>Pucker</th><th>Pairing</th><th>Spline</th></tr></thead>
+    <tbody>
+      <tr><td><code>2ntCG</code></td><td>29.6854986223</td><td>17.4625273620</td><td>0.7968914889</td><td>3.6934612881</td><td>12.7937141622</td><td>0.0</td><td>-5.0610956789</td></tr>
+      <tr><td><code>157d</code></td><td>-408.2543522195</td><td>73.6128432364</td><td>6.1585427888</td><td>99.6522427303</td><td>37.6240994058</td><td>-310.6757454249</td><td>-265.2936722115</td></tr>
+      <tr><td><code>1l2x</code></td><td>854.1646598338</td><td>382.5820370565</td><td>13.6065843518</td><td>1089.5108475399</td><td>60.8985319810</td><td>-283.6257210398</td><td>-227.8852896378</td></tr>
+      <tr><td><code>1zih</code></td><td>171.1675562407</td><td>67.3450501246</td><td>5.9194826196</td><td>303.6612371037</td><td>14.1013918794</td><td>-141.7977171903</td><td>-101.7651718486</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Verification</h2>
+  <table>
+    <thead><tr><th>Command</th><th>Result</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>conda run -n cranberry-dev python -m pytest -q</code></td><td class="ok">15 passed</td><td>Includes import, data, validation, CLI, system construction, H5 normalization, and energy regressions.</td></tr>
+      <tr><td><code>conda run -n cranberry-dev sphinx-build -b html docs docs/_build/html</code></td><td class="ok">passed</td><td>Public docs build after API/CLI/force-field updates.</td></tr>
+      <tr><td><code>conda run -n cranberry-dev python -m build</code></td><td class="ok">passed</td><td>Wheel includes <code>energy.py</code>, examples, merged H5, XML, and license.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Risk Review</h2>
+  <ul>
+    <li><span class="warn">Scientific parity:</span> the code follows the legacy formulas, but exact parity against workshop logs has not yet been independently audited.</li>
+    <li><span class="warn">Code size:</span> <code>forcefield.py</code> is larger now because it directly encodes the canonical force construction. It avoids extra framework layers, but may deserve careful module splitting after MD/reporters arrive.</li>
+    <li><span class="warn">Dependency:</span> base runtime now depends on <code>h5py</code> because the canonical model asset is HDF5.</li>
+    <li><span class="warn">No PBC path yet:</span> Phase 2 energy construction is non-periodic, matching the immediate CPU regression use case. PBC/box handling belongs with MD.</li>
+    <li><span class="warn">Pre-v1 documentation:</span> before release, add force-construction comments/docs for bonds, angles, dihedrals, sugar pucker, stacking, pairing, WCA, spline, and electrostatics so the OpenMM-CGRNA mapping is easy to audit.</li>
+  </ul>
+
+  <h2>Recommended Next Step</h2>
+  <p>Before Phase 3 MD/reporters, run a focused workshop parity audit: generate energies from the workshop implementation for the same four fixtures, compare component-by-component, and document any intentional differences.</p>
+
+  <p class="small">Generated for developer review. Wait for user approval before committing.</p>
+</main>
+</body>
+</html>

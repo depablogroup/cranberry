@@ -24,6 +24,7 @@ classifiers = [
 ]
 dependencies = [
   "openmm",
+  "h5py",
 ]
 
 [project.optional-dependencies]

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from cranberry import __version__
 from cranberry.data import available_forcefields
+from openmm import unit
+
+from cranberry.energy import compute_energy
 from cranberry.forcefield import (
     FORCE_GROUP_NAMES,
     available_models,
@@ -13,7 +17,7 @@ from cranberry.forcefield import (
 )
 from cranberry.validation import validate_canonical_pdb
 
-_COMMANDS = ("prepare", "cg", "md", "remd", "energy")
+_COMMANDS = ("prepare", "cg", "md", "remd")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -34,6 +38,15 @@ def build_parser() -> argparse.ArgumentParser:
             help=f"{command} workflow (not implemented yet)",
         )
         subparser.set_defaults(func=_not_implemented)
+
+    energy_parser = subparsers.add_parser("energy", help="compute total and decomposed CRANBERRY energies")
+    energy_parser.add_argument("pdb", type=Path)
+    energy_parser.add_argument("--model", default="default")
+    energy_parser.add_argument("--temperature", type=float, default=298.0, help="temperature in kelvin")
+    energy_parser.add_argument("--salt", type=float, default=150.0, help="salt concentration in millimolar")
+    energy_parser.add_argument("--platform", default="CPU", help="OpenMM platform name; use 'default' to let OpenMM choose")
+    energy_parser.add_argument("--json", action="store_true", help="write energies as JSON")
+    energy_parser.set_defaults(func=_energy)
 
     inspect_parser = subparsers.add_parser("inspect", help="inspect package data, models, or inputs")
     inspect_subparsers = inspect_parser.add_subparsers(dest="inspect_command", metavar="TARGET")
@@ -57,6 +70,24 @@ def _not_implemented(args: argparse.Namespace) -> int:
         f"The 'cranberry {args.command}' command is part of the v1 roadmap "
         "but is not implemented in this scaffold yet."
     )
+
+
+def _energy(args: argparse.Namespace) -> int:
+    platform = None if args.platform == "default" else args.platform
+    report = compute_energy(
+        args.pdb,
+        model=args.model,
+        temperature=args.temperature * unit.kelvin,
+        salt_concentration=args.salt * unit.millimolar,
+        platform=platform,
+    )
+    values = report.as_kj_per_mol()
+    if args.json:
+        print(json.dumps(values, indent=2, sort_keys=True))
+    else:
+        for name, value in values.items():
+            print(f"{name:>14s}: {value: .8f} kJ/mol")
+    return 0
 
 
 def _inspect_summary(args: argparse.Namespace) -> int:

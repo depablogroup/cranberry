@@ -7,4 +7,6 @@ try:
 except PackageNotFoundError:  # pragma: no cover - editable source tree before install
     __version__ = "0+unknown"
 
-__all__ = ["__version__"]
+from cranberry.forcefield import CranberryForceField
+
+__all__ = ["__version__", "CranberryForceField"]

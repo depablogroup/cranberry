@@ -210,6 +210,7 @@ During migration, use `CRANBERRY_workshop/cranberry-workshop-919771f4-gpu/` as t
 - CI may run only a tiny benchmark smoke check.
 - Full CPU/GPU benchmarks should be manual or scheduled, because GitHub runners are noisy and GPU availability is unreliable.
 - Benchmark results should be machine-readable and suitable for publishing in docs.
+- Before v1 release, add appropriate developer-facing documentation and comments for the force-field construction internals, especially `add_bond`, `add_angle`, `add_dihedral`, `add_sugar_pucker`, stacking, pairing, WCA, spline, and electrostatics. These notes should explain the scientific formula mapping from `OpenMM-CGRNA` to Cranberry without making the public docs too implementation-heavy.
 
 ## Documentation
 

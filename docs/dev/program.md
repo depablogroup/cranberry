@@ -86,9 +86,12 @@ The report should include:
 
 - what changed and why
 - important code paths touched
+- important code snippets, written like a PR/code review for a colleague
 - command outputs or summarized results
 - tests and docs checks
 - known risks and follow-up work
+
+For substantial implementation changes, the report should show the essential code, not only describe it. Include short snippets for the public API, the main control flow, scientific/model assumptions, representative tests, and any risky or non-obvious implementation choices. Keep snippets focused enough to review quickly, and use prose to explain why each snippet matters.
 
 The report is a developer artifact and should remain excluded from the public Sphinx build unless the user decides otherwise.
 
