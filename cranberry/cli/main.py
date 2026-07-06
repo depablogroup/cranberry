@@ -9,6 +9,7 @@ from cranberry.data import available_forcefields
 from openmm import unit
 
 from cranberry.energy import compute_energy
+from cranberry.md import run_md
 from cranberry.forcefield import (
     FORCE_GROUP_NAMES,
     available_models,
@@ -17,7 +18,7 @@ from cranberry.forcefield import (
 )
 from cranberry.validation import validate_canonical_pdb
 
-_COMMANDS = ("prepare", "cg", "md", "remd")
+_COMMANDS = ("prepare", "cg", "remd")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -38,6 +39,19 @@ def build_parser() -> argparse.ArgumentParser:
             help=f"{command} workflow (not implemented yet)",
         )
         subparser.set_defaults(func=_not_implemented)
+
+    md_parser = subparsers.add_parser("md", help="run CRANBERRY molecular dynamics")
+    md_parser.add_argument("pdb", type=Path)
+    md_parser.add_argument("--steps", type=int, required=True, help="number of MD integration steps")
+    md_parser.add_argument("--output-dir", type=Path, default=Path("."), help="directory for MD outputs; defaults to current directory")
+    md_parser.add_argument("--model", default="default")
+    md_parser.add_argument("--temperature", type=float, default=298.0, help="temperature in kelvin")
+    md_parser.add_argument("--salt", type=float, default=150.0, help="salt concentration in millimolar")
+    md_parser.add_argument("--timestep", type=float, default=10.0, help="integration timestep in femtoseconds")
+    md_parser.add_argument("--report-interval", type=int, default=None, help="steps between output reports; defaults to min(steps, 1000)")
+    md_parser.add_argument("--platform", default="CPU", help="OpenMM platform name; use 'default' to let OpenMM choose")
+    md_parser.add_argument("--no-overwrite", action="store_true", help="fail if default MD output files already exist")
+    md_parser.set_defaults(func=_md)
 
     energy_parser = subparsers.add_parser("energy", help="compute total and decomposed CRANBERRY energies")
     energy_parser.add_argument("pdb", type=Path)
@@ -70,6 +84,29 @@ def _not_implemented(args: argparse.Namespace) -> int:
         f"The 'cranberry {args.command}' command is part of the v1 roadmap "
         "but is not implemented in this scaffold yet."
     )
+
+
+def _md(args: argparse.Namespace) -> int:
+    platform = None if args.platform == "default" else args.platform
+    result = run_md(
+        args.pdb,
+        steps=args.steps,
+        output_dir=args.output_dir,
+        model=args.model,
+        temperature=args.temperature * unit.kelvin,
+        salt_concentration=args.salt * unit.millimolar,
+        timestep=args.timestep * unit.femtosecond,
+        report_interval=args.report_interval,
+        platform=platform,
+        overwrite=not args.no_overwrite,
+    )
+    print(f"output directory: {result.output_dir}")
+    print(f"trajectory: {result.dcd_path}")
+    print(f"log: {result.log_path}")
+    print(f"detailed log: {result.detailed_log_path}")
+    print(f"checkpoint: {result.checkpoint_path}")
+    print(f"final pdb: {result.final_pdb_path}")
+    return 0
 
 
 def _energy(args: argparse.Namespace) -> int:

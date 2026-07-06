@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CRANBERRY Phase 3 MD Code Review</title>
+  <style>
+    :root { --ink:#18222c; --muted:#5b6670; --line:#d9e0e7; --soft:#f5f7fa; --code:#0f1720; --ok:#137348; --warn:#9a5b00; --accent:#0b66c3; }
+    body { margin:0; color:var(--ink); font:15px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:white; }
+    main { max-width:1120px; margin:0 auto; padding:36px 28px 72px; }
+    h1 { margin:0 0 10px; font-size:32px; line-height:1.15; }
+    h2 { margin:32px 0 12px; padding-top:22px; border-top:1px solid var(--line); font-size:22px; }
+    h3 { margin:20px 0 8px; font-size:17px; }
+    p { margin:0 0 12px; color:var(--muted); }
+    code, pre { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace; }
+    pre { margin:10px 0 0; padding:13px 15px; overflow:auto; color:#edf5ff; background:var(--code); border-radius:8px; font-size:13px; }
+    table { width:100%; border-collapse:collapse; margin:12px 0 0; font-size:14px; }
+    th, td { border-bottom:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+    th { background:var(--soft); }
+    ul { margin:8px 0 0 20px; padding:0; }
+    li { margin:5px 0; }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+    .card { border:1px solid var(--line); border-radius:8px; padding:15px; }
+    .ok { color:var(--ok); font-weight:700; }
+    .warn { color:var(--warn); font-weight:700; }
+    .small { font-size:13px; color:var(--muted); }
+    .pill { display:inline-block; padding:2px 7px; border-radius:999px; background:var(--soft); color:var(--muted); font-size:12px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>CRANBERRY Phase 3 MD Code Review</h1>
+  <p>Developer review for the first Phase 3 MD implementation: OpenMM-native simulation creation, default MD output files, detailed energy reporting, CLI wiring, tests, and docs.</p>
+
+  <h2>Review Finding</h2>
+  <div class="card">
+    <h3><span class="ok">No blocking issues found</span></h3>
+    <p>The implementation is narrowly scoped and passes the local CPU test suite, Sphinx docs build, and package build. The remaining risks are acceptable for the current Phase 3 slice and are listed below.</p>
+  </div>
+
+  <h2>Scope</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>Implemented</h3>
+      <ul>
+        <li>Added <code>cranberry.md</code> with <code>create_simulation</code>, <code>run_md</code>, <code>calculate_langevin_friction</code>, and <code>DetailedEnergyReporter</code>.</li>
+        <li>Added <code>cranberry md PDB --steps N</code> CLI.</li>
+        <li>Added default MD outputs: <code>output.dcd</code>, <code>log</code>, <code>detailed.log</code>, <code>args.json</code>, <code>checkpoint.chk</code>, and <code>final.pdb</code>.</li>
+        <li>Added CPU smoke tests for API, CLI, reporter output, no-overwrite behavior, and legacy friction formula.</li>
+        <li>Updated API, CLI, output, quickstart, and tutorial docs.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Still out of scope</h3>
+      <ul>
+        <li><code>cranberry remd</code> and <code>openmmtools</code> integration.</li>
+        <li><code>cranberry prepare</code>, <code>cranberry cg</code>, and 5'-phosphate insertion.</li>
+        <li>Restart-from-checkpoint API/CLI flow.</li>
+        <li>Friendlier <code>--time</code> plus <code>--timestep</code> CLI duration parsing.</li>
+        <li>Long MD validation or GPU performance benchmarks.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>Important Files</h2>
+  <table>
+    <thead><tr><th>Path</th><th>Review Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>cranberry/md.py</code></td><td>New MD runtime module. Owns simulation construction, friction heuristic, default reporters, output files, and detailed energy reporter.</td></tr>
+      <tr><td><code>cranberry/cli/main.py</code></td><td>Adds real <code>md</code> subcommand while keeping <code>prepare</code>, <code>cg</code>, and <code>remd</code> as roadmap placeholders.</td></tr>
+      <tr><td><code>cranberry/__init__.py</code></td><td>Exports the small MD API from the top-level package.</td></tr>
+      <tr><td><code>tests/test_md.py</code></td><td>Locks friction formula, integrator temperature/timestep, default outputs, <code>detailed.log</code> header, and no-overwrite behavior.</td></tr>
+      <tr><td><code>tests/test_cli.py</code></td><td>Adds a <code>cranberry md</code> CLI smoke test on the 2nt packaged fixture.</td></tr>
+      <tr><td><code>docs/reference/*.md</code>, <code>docs/tutorials/prepare-and-run-md.md</code></td><td>Document the implemented <code>--steps</code>-first MD workflow and output contract.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Core API Review</h2>
+  <h3>Simulation Creation</h3>
+  <p><code>create_simulation</code> follows the existing energy path: validate the canonical PDB, build the CRANBERRY system from the same force-field object, then construct an OpenMM <code>Simulation</code>. Temperature is converted once and passed to both system construction and the integrator, which keeps electrostatics and dynamics consistent.</p>
+  <pre><code>def create_simulation(
+    pdb_path: str | Path,
+    *,
+    model: str = "default",
+    temperature=298 * unit.kelvin,
+    salt_concentration=150 * unit.millimolar,
+    timestep=10 * unit.femtosecond,
+    platform: str | None = "CPU",
+) -&gt; app.Simulation:
+    validation = validate_canonical_pdb(pdb_path)
+    validation.raise_for_errors()
+
+    temperature = _as_quantity(temperature, unit.kelvin)
+    timestep = _as_quantity(timestep, unit.femtosecond)
+    salt_concentration = _as_quantity(salt_concentration, unit.millimolar)
+
+    pdb = app.PDBFile(str(pdb_path))
+    forcefield = CranberryForceField(model)
+    system = forcefield.createSystem(
+        pdb.topology,
+        positions=pdb.positions,
+        temperature=temperature,
+        salt_concentration=salt_concentration,
+    )
+    friction = calculate_langevin_friction(pdb.topology, system, temperature)
+    integrator = LangevinMiddleIntegrator(temperature, friction, timestep)</code></pre>
+
+  <h3>Legacy Friction Heuristic</h3>
+  <p>The implementation directly matches the legacy <code>openRNA.calc_gamma()</code> formula: empirical diffusion depends on nucleotide count, total mass is converted to <code>g/mol</code>, and the gas constant is <code>unit.MOLAR_GAS_CONSTANT_R</code>.</p>
+  <pre><code>def calculate_langevin_friction(topology: app.Topology, system: mm.System, temperature) -&gt; unit.Quantity:
+    temperature = _as_quantity(temperature, unit.kelvin)
+    n_residues = sum(1 for _ in topology.residues())
+    diffusion = 4.58e-10 * unit.meter**2 / unit.second * n_residues ** (-0.39)
+    total_mass = sum((system.getParticleMass(i) for i in range(system.getNumParticles())), 0 * unit.dalton)
+    total_mass = total_mass.in_units_of(unit.gram / unit.mole)
+    gamma = unit.MOLAR_GAS_CONSTANT_R * temperature / (diffusion * total_mass)
+    return gamma.in_units_of(unit.picosecond**-1)</code></pre>
+  <p>The test recomputes the formula independently instead of only checking that a value exists.</p>
+  <pre><code>diffusion = 4.58e-10 * unit.meter**2 / unit.second * 2 ** (-0.39)
+total_mass = sum((system.getParticleMass(i) for i in range(system.getNumParticles())), 0 * unit.dalton)
+expected = (unit.MOLAR_GAS_CONSTANT_R * 298 * unit.kelvin / (diffusion * total_mass)).in_units_of(unit.picosecond**-1)
+assert gamma.value_in_unit(unit.picosecond**-1) == pytest.approx(expected.value_in_unit(unit.picosecond**-1))</code></pre>
+
+  <h2>Runtime Output Contract</h2>
+  <p><code>run_md</code> centralizes the output names we agreed on. The output directory is explicit and defaults to the current directory. MD overwrites by default, while <code>--no-overwrite</code> exposes a guard for tests and cautious users.</p>
+  <pre><code>result = MDRunResult(
+    output_dir=output_dir,
+    dcd_path=output_dir / "output.dcd",
+    log_path=output_dir / "log",
+    detailed_log_path=output_dir / "detailed.log",
+    args_path=output_dir / "args.json",
+    checkpoint_path=output_dir / "checkpoint.chk",
+    final_pdb_path=output_dir / "final.pdb",
+    steps=steps,
+    report_interval=report_interval,
+)</code></pre>
+  <p>Reporters are standard OpenMM reporters plus one Cranberry reporter for energy decomposition.</p>
+  <pre><code>simulation.reporters.append(app.DCDReporter(str(result.dcd_path), report_interval))
+simulation.reporters.append(
+    app.StateDataReporter(
+        str(result.log_path),
+        report_interval,
+        step=True,
+        time=True,
+        potentialEnergy=True,
+        temperature=True,
+        speed=True,
+        totalSteps=steps,
+    )
+)
+simulation.reporters.append(DetailedEnergyReporter(result.detailed_log_path, report_interval))</code></pre>
+
+  <h2>Detailed Energy Reporter</h2>
+  <p>The reporter uses the modern OpenMM reporter protocol, returning a dictionary from <code>describeNextReport</code>. It asks OpenMM for energy in the shared state, then queries named force groups individually for component energies.</p>
+  <pre><code>def describeNextReport(self, simulation):
+    steps = self._reportInterval - simulation.currentStep % self._reportInterval
+    return {"steps": steps, "periodic": None, "include": ["energy"]}
+
+
+def report(self, simulation, state):
+    names = _present_force_group_names(simulation.system)
+    if not self._has_initialized:
+        header = ["Step", "Time (ps)", "Potential Energy (kJ/mole)"]
+        header.extend(f"{name} (kJ/mole)" for name in names)
+        self._out.write("#" + ",".join(json.dumps(item) for item in header) + "\n")</code></pre>
+  <p>This preserves the design decision that disabled forces should not appear as confusing zero-energy columns. Present force groups are discovered from the actual OpenMM system.</p>
+  <pre><code>def _present_force_group_names(system: mm.System) -&gt; list[str]:
+    names_by_group = {system.getForce(i).getForceGroup(): system.getForce(i).getName() for i in range(system.getNumForces())}
+    return [name for name, group in FORCE_GROUP_IDS.items() if group in names_by_group and names_by_group[group] == name]</code></pre>
+
+  <h2>CLI Review</h2>
+  <p>The CLI layer stays thin: parse shell numbers, convert to OpenMM quantities, call <code>run_md</code>, and print output paths. It intentionally uses <code>--steps</code> first; <code>--time</code> parsing is deferred in the v1 plan.</p>
+  <pre><code>md_parser = subparsers.add_parser("md", help="run CRANBERRY molecular dynamics")
+md_parser.add_argument("pdb", type=Path)
+md_parser.add_argument("--steps", type=int, required=True, help="number of MD integration steps")
+md_parser.add_argument("--output-dir", type=Path, default=Path("."), help="directory for MD outputs; defaults to current directory")
+md_parser.add_argument("--temperature", type=float, default=298.0, help="temperature in kelvin")
+md_parser.add_argument("--timestep", type=float, default=10.0, help="integration timestep in femtoseconds")
+md_parser.add_argument("--platform", default="CPU", help="OpenMM platform name; use 'default' to let OpenMM choose")
+md_parser.add_argument("--no-overwrite", action="store_true", help="fail if default MD output files already exist")</code></pre>
+
+  <h2>Tests And Evidence</h2>
+  <table>
+    <thead><tr><th>Check</th><th>Status</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>python -m pytest tests/test_md.py tests/test_cli.py -q</code></td><td class="ok">passed</td><td>9 tests passed in 15.88 s.</td></tr>
+      <tr><td><code>python -m pytest -q</code></td><td class="ok">passed</td><td>20 tests passed in 29.77 s.</td></tr>
+      <tr><td><code>sphinx-build -b html docs docs/_build/html</code></td><td class="ok">passed</td><td>Docs build succeeded.</td></tr>
+      <tr><td><code>python -m build</code></td><td class="ok">passed</td><td>Wheel includes <code>cranberry/md.py</code> plus packaged XML/H5/PDB data.</td></tr>
+      <tr><td><code>python -m cranberry.cli md --help</code></td><td class="ok">passed</td><td>Shows the implemented <code>md</code> options.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Residual Risks</h2>
+  <ul>
+    <li><span class="warn">Short-run only:</span> tests run one-step CPU simulations. That is correct for CI but does not validate long-run stability.</li>
+    <li><span class="warn">Restart not implemented yet:</span> <code>checkpoint.chk</code> is written, but no public resume API/CLI exists in this slice.</li>
+    <li><span class="warn">Default platform:</span> default remains CPU for predictable local/CI behavior. Users can pass <code>--platform default</code> or a named OpenMM platform.</li>
+    <li><span class="warn">No seed option:</span> this follows the v1 decision, but repeated one-step MD runs will not be bitwise identical because velocities are randomized.</li>
+    <li><span class="warn">Reporter compatibility:</span> reporter protocol was checked against the installed OpenMM version. If we later support much older OpenMM versions, this may need an adapter.</li>
+  </ul>
+
+  <h2>Recommendation</h2>
+  <p><span class="ok">Approve this Phase 3 MD slice.</span> It implements the smallest useful MD workflow with tests and docs, without pulling in REMD/openmmtools complexity. Next work should add restart/resume semantics or begin the REMD layer, depending on which user workflow is more urgent.</p>
+</main>
+</body>
+</html>

@@ -14,4 +14,14 @@ Validate a canonical coarse-grained input PDB:
 cranberry inspect input cranberry/data/examples/1zih_cg_vs_conect.pdb
 ```
 
-Force-field construction and simulation commands will be added during the v1 migration.
+Compute an energy decomposition:
+
+```bash
+cranberry energy cranberry/data/examples/2ntCG_cg_vs_conect.pdb --platform CPU
+```
+
+Run a tiny CPU MD smoke simulation:
+
+```bash
+cranberry md cranberry/data/examples/2ntCG_cg_vs_conect.pdb --steps 10 --output-dir md-out --platform CPU
+```

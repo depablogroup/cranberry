@@ -176,6 +176,7 @@ Rules:
   ```
 
 - `cranberry md` follows OpenMM-style overwrite behavior.
+- Phase 3 `cranberry md` accepts explicit `--steps` first. Defer friendlier `--time` plus `--timestep` CLI duration parsing until the basic MD path is stable; the Python API may still accept OpenMM unit quantities.
 - `cranberry remd` follows OpenMMTools-style no-overwrite behavior.
 - REMD default outputs:
   - `output.nc`

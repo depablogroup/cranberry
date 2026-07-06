@@ -30,3 +30,16 @@ def test_cli_inspect_input(capsys):
     captured = capsys.readouterr()
     assert "valid: True" in captured.out
     assert "residues: 2" in captured.out
+
+
+def test_cli_md_smoke(tmp_path, capsys):
+    path = data_path("examples/2ntCG_cg_vs_conect.pdb")
+    assert main(["md", str(path), "--steps", "1", "--report-interval", "1", "--output-dir", str(tmp_path), "--platform", "CPU"]) == 0
+    captured = capsys.readouterr()
+    assert "output directory:" in captured.out
+    assert (tmp_path / "output.dcd").exists()
+    assert (tmp_path / "log").exists()
+    assert (tmp_path / "detailed.log").exists()
+    assert (tmp_path / "args.json").exists()
+    assert (tmp_path / "checkpoint.chk").exists()
+    assert (tmp_path / "final.pdb").exists()

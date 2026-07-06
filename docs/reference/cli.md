@@ -8,6 +8,27 @@ cranberry inspect data
 cranberry inspect forcefield [MODEL]
 cranberry inspect input PDB
 cranberry energy PDB
+cranberry md PDB --steps STEPS
+```
+
+Run a short CPU MD simulation from a canonical coarse-grained PDB:
+
+```bash
+cranberry md input_cg_vs_conect.pdb --steps 1000 --output-dir md-out --platform CPU
+```
+
+Common `md` options:
+
+```text
+--steps N              number of MD integration steps; required
+--output-dir DIR       output directory, default current directory
+--model MODEL          force-field model, default resolves to cranberry-v1-alpha.1
+--temperature K        temperature in kelvin, default 298
+--salt MM              salt concentration in millimolar, default 150
+--timestep FS          integration timestep in femtoseconds, default 10
+--report-interval N    steps between output reports, default min(steps, 1000)
+--platform NAME        OpenMM platform name, default CPU; use default to let OpenMM choose
+--no-overwrite         fail if default MD output files already exist
 ```
 
 Compute total and decomposed energies on CPU:
@@ -36,5 +57,4 @@ Planned commands:
 
 - `cranberry prepare`
 - `cranberry cg`
-- `cranberry md`
 - `cranberry remd`
