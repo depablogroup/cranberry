@@ -1,6 +1,12 @@
 # Quickstart
 
-Inspect the installed package and bundled force-field assets:
+After installation, first confirm whether your OpenMM environment is visible and, if you plan to use GPU acceleration, verify the backend before running Cranberry:
+
+```bash
+python -m openmm.testInstallation
+```
+
+If that passes, inspect the installed package and bundled force-field assets:
 
 ```bash
 cranberry inspect
@@ -24,6 +30,12 @@ Run a tiny CPU MD smoke simulation:
 
 ```bash
 cranberry md cranberry/data/examples/2ntCG_cg_vs_conect.pdb --steps 10 --output-dir md-out --platform CPU
+```
+
+For GPU validation, reuse the same command shape with an explicit platform such as `CUDA`:
+
+```bash
+cranberry energy cranberry/data/examples/2ntCG_cg_vs_conect.pdb --platform CUDA
 ```
 
 Restart from the generated checkpoint:

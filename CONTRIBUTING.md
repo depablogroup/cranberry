@@ -5,16 +5,23 @@
 Use the dedicated development environment for the new package:
 
 ```bash
+conda create -n cranberry-dev python=3.11
+conda activate cranberry-dev
+cd /path/to/cranberry
+python -m pip install -e ".[dev]"
+```
+
+If the environment already exists:
+
+```bash
 conda activate cranberry-dev
 python -m pip install -e ".[dev]"
 ```
 
-If the environment does not exist yet, create it with Python 3.11:
+If you want to validate GPU support before running Cranberry on an accelerator, check OpenMM first:
 
 ```bash
-conda create -n cranberry-dev python=3.11
-conda activate cranberry-dev
-python -m pip install -e ".[dev]"
+python -m openmm.testInstallation
 ```
 
 ## Verify Changes
@@ -25,6 +32,13 @@ Run these from the repository root:
 python -m pytest -q
 sphinx-build -b html docs docs/_build/html
 cranberry --help
+```
+
+For GPU-enabled local validation, a good first smoke test is:
+
+```bash
+python -m openmm.testInstallation
+cranberry energy cranberry/data/examples/2ntCG_cg_vs_conect.pdb --platform CUDA
 ```
 
 ## Repository Layout

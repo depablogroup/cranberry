@@ -2,7 +2,9 @@
 
 `cranberry-rna` is the installable Python package for CRANBERRY coarse-grained RNA simulations with OpenMM. The distribution name is `cranberry-rna`; the Python import package is `cranberry`.
 
-CRANBERRY is currently in alpha development while the stable v1 workflow is migrated from the legacy `OpenMM-CGRNA` project. The package now contains the canonical CRANBERRY v1 alpha force-field assets, an OpenMM-native force-field API, CPU energy decomposition, and a basic MD runner.
+CRANBERRY is currently in alpha development while the stable v1 workflow is migrated from the legacy `OpenMM-CGRNA` project. The current package already ships the canonical CRANBERRY v1 alpha force-field assets, an OpenMM-native force-field API, CPU energy decomposition, a basic MD runner with restart support, and the first Phase 4 preparation workflow slice.
+
+This repository is intended to be usable by active developers from a fresh clone, including developers who want to run on GPU hardware. The package itself is intentionally small: it does not manage GPU drivers, CUDA toolkits, or OpenMM platform installation. Those come from your local Python environment and system setup.
 
 ## Current Scope
 
@@ -11,6 +13,7 @@ Implemented:
 - package import as `cranberry`
 - packaged model assets: XML plus `cranberry-v1-alpha.1.h5`
 - canonical input validation
+- `cranberry prepare` and `cranberry cg` canonicalization workflow
 - `CranberryForceField.createSystem()`
 - `cranberry energy` and `cranberry.energy.compute_energy()`
 - `cranberry md` and `cranberry.md.run_md()`
@@ -24,20 +27,72 @@ Planned:
 - REMD through optional `openmmtools` support
 - optional JAX/training/PySAGES workflows
 
-## Development Install
+## Fresh Setup
 
-Use the dedicated development environment, then install the package in editable mode:
+The recommended development flow is:
+
+1. Create a dedicated conda environment.
+2. Install the package in editable mode with dev extras.
+3. Verify the import, CLI, and tests.
+
+For a new environment:
 
 ```bash
+conda create -n cranberry-dev python=3.11
 conda activate cranberry-dev
-pip install -e ".[dev]"
+cd /path/to/cranberry
+python -m pip install -e ".[dev]"
 ```
 
-Confirm the import points at the editable checkout:
+Verify the editable install:
 
 ```bash
 python -c 'import cranberry; print(cranberry.__file__)'
+cranberry --help
+python -m pytest -q
+sphinx-build -b html docs docs/_build/html
 ```
+
+If you prefer a CPU-only workflow, this is enough. If you want GPU execution, keep reading.
+
+## GPU Development
+
+The current workflow is sufficient for GPU-enabled development if your environment already exposes a GPU-capable OpenMM build. In practice, that means:
+
+- your driver/runtime stack is installed on the machine
+- OpenMM can see the accelerator platform you want to use
+- you select that platform explicitly or allow OpenMM to choose it
+
+CRANBERRY does not add an extra GPU-specific install layer. Once OpenMM is installed correctly, the same editable install works for CPU and GPU runs:
+
+```bash
+python -m pip install -e ".[dev]"
+```
+
+To run on GPU hardware, pass the OpenMM platform you want:
+
+```bash
+cranberry energy cranberry/data/examples/2ntCG_cg_vs_conect.pdb --platform CUDA
+cranberry md cranberry/data/examples/2ntCG_cg_vs_conect.pdb \
+  --steps 1000 \
+  --output-dir md-out \
+  --platform CUDA
+```
+
+If you want OpenMM to pick the available platform itself, use:
+
+```bash
+cranberry md cranberry/data/examples/2ntCG_cg_vs_conect.pdb \
+  --steps 1000 \
+  --output-dir md-out \
+  --platform default
+```
+
+Important current limitations:
+
+- CI is CPU-only, so GPU behavior is not validated in GitHub Actions.
+- The package defaults to CPU for predictable local and CI behavior.
+- GPU restart behavior still uses the same OpenMM checkpoint contract, so the restart checkpoint must be compatible with the selected platform and model.
 
 ## Quickstart
 
@@ -47,6 +102,12 @@ Inspect the package and default model:
 cranberry inspect
 cranberry inspect forcefield
 cranberry inspect data
+```
+
+Prepare a canonical coarse-grained input and add a terminal phosphate when needed:
+
+```bash
+cranberry prepare cranberry/data/examples/2ntCG_cg_vs_conect.pdb --add-terminal-phosphate
 ```
 
 Validate a canonical coarse-grained input PDB:
@@ -137,13 +198,31 @@ python -m build
 
 Primary documentation lives under `docs/`. Developer-only design notes and code-review reports live under `docs/dev/` and are intentionally excluded from the public documentation narrative.
 
-Useful entry points:
+Start here:
 
-- `docs/quickstart.md`
-- `docs/reference/cli.md`
-- `docs/reference/api.md`
-- `docs/reference/outputs.md`
-- `docs/dev/cranberry-v1-plan.md`
+- [Installation](docs/installation.md)
+- [Quickstart](docs/quickstart.md)
+- [API reference](docs/reference/api.md)
+- [CLI reference](docs/reference/cli.md)
+- [Outputs reference](docs/reference/outputs.md)
+- [Force-field reference](docs/reference/forcefield.md)
+
+Tutorials:
+
+- [Energy decomposition](docs/tutorials/energy-decomposition.md)
+- [Prepare and run MD](docs/tutorials/prepare-and-run-md.md)
+- [REMD](docs/tutorials/remd.md)
+
+Developer notes:
+
+- [Development environment](docs/dev/development-environment.md)
+- [Project program](docs/dev/program.md)
+- [Roadmap](docs/dev/roadmap.md)
+- [v1 plan](docs/dev/cranberry-v1-plan.md)
+- [Migration from OpenMM-CGRNA](docs/dev/migration-from-openmm-cgrna.md)
+- [Reference output generation](docs/dev/reference-output-generation.md)
+- [Next Codex handoff](docs/dev/next-codex-handoff.md)
+- [ADR index](docs/dev/adr/README.md)
 
 ## License
 
