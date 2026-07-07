@@ -200,29 +200,29 @@ Primary documentation lives under `docs/`. Developer-only design notes and code-
 
 Start here:
 
-- [Installation](docs/installation.md)
-- [Quickstart](docs/quickstart.md)
-- [API reference](docs/reference/api.md)
-- [CLI reference](docs/reference/cli.md)
-- [Outputs reference](docs/reference/outputs.md)
-- [Force-field reference](docs/reference/forcefield.md)
+- [Installation](https://github.com/yihengwuKP/cranberry/blob/main/docs/installation.md)
+- [Quickstart](https://github.com/yihengwuKP/cranberry/blob/main/docs/quickstart.md)
+- [API reference](https://github.com/yihengwuKP/cranberry/blob/main/docs/reference/api.md)
+- [CLI reference](https://github.com/yihengwuKP/cranberry/blob/main/docs/reference/cli.md)
+- [Outputs reference](https://github.com/yihengwuKP/cranberry/blob/main/docs/reference/outputs.md)
+- [Force-field reference](https://github.com/yihengwuKP/cranberry/blob/main/docs/reference/forcefield.md)
 
 Tutorials:
 
-- [Energy decomposition](docs/tutorials/energy-decomposition.md)
-- [Prepare and run MD](docs/tutorials/prepare-and-run-md.md)
-- [REMD](docs/tutorials/remd.md)
+- [Energy decomposition](https://github.com/yihengwuKP/cranberry/blob/main/docs/tutorials/energy-decomposition.md)
+- [Prepare and run MD](https://github.com/yihengwuKP/cranberry/blob/main/docs/tutorials/prepare-and-run-md.md)
+- [REMD](https://github.com/yihengwuKP/cranberry/blob/main/docs/tutorials/remd.md)
 
 Developer notes:
 
-- [Development environment](docs/dev/development-environment.md)
-- [Project program](docs/dev/program.md)
-- [Roadmap](docs/dev/roadmap.md)
-- [v1 plan](docs/dev/cranberry-v1-plan.md)
-- [Migration from OpenMM-CGRNA](docs/dev/migration-from-openmm-cgrna.md)
-- [Reference output generation](docs/dev/reference-output-generation.md)
-- [Next Codex handoff](docs/dev/next-codex-handoff.md)
-- [ADR index](docs/dev/adr/README.md)
+- [Development environment](https://github.com/yihengwuKP/cranberry/blob/main/docs/dev/development-environment.md)
+- [Project program](https://github.com/yihengwuKP/cranberry/blob/main/docs/dev/program.md)
+- [Roadmap](https://github.com/yihengwuKP/cranberry/blob/main/docs/dev/roadmap.md)
+- [v1 plan](https://github.com/yihengwuKP/cranberry/blob/main/docs/dev/cranberry-v1-plan.md)
+- [Migration from OpenMM-CGRNA](https://github.com/yihengwuKP/cranberry/blob/main/docs/dev/migration-from-openmm-cgrna.md)
+- [Reference output generation](https://github.com/yihengwuKP/cranberry/blob/main/docs/dev/reference-output-generation.md)
+- [Next Codex handoff](https://github.com/yihengwuKP/cranberry/blob/main/docs/dev/next-codex-handoff.md)
+- [ADR index](https://github.com/yihengwuKP/cranberry/blob/main/docs/dev/adr/README.md)
 
 ## License
 
