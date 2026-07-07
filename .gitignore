@@ -10,3 +10,12 @@ docs/_build/
 
 # Local docs build
 docs/_build/
+# Cranberry MD default outputs
+**/output.dcd
+**/log
+**/detailed.log
+**/args.json
+**/checkpoint.chk
+**/final.pdb
+**/args_history/
+

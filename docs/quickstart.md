@@ -25,3 +25,9 @@ Run a tiny CPU MD smoke simulation:
 ```bash
 cranberry md cranberry/data/examples/2ntCG_cg_vs_conect.pdb --steps 10 --output-dir md-out --platform CPU
 ```
+
+Restart from the generated checkpoint:
+
+```bash
+cranberry md cranberry/data/examples/2ntCG_cg_vs_conect.pdb --steps 10 --restart-from md-out/checkpoint.chk --output-dir md-out --platform CPU
+```

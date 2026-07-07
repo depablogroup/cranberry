@@ -46,6 +46,18 @@ result = run_md(
 print(result.final_pdb_path)
 ```
 
+Restart from a checkpoint by passing `restart_from`. Restart appends to `output.dcd`, `log`, and `detailed.log` in the output directory; missing output files are created with a warning:
+
+```python
+restart = run_md(
+    "input_cg_vs_conect.pdb",
+    steps=1000,
+    output_dir="md-out",
+    restart_from="md-out/checkpoint.chk",
+    platform="CPU",
+)
+```
+
 Use `create_simulation` when you need direct access to an OpenMM `Simulation` before running dynamics:
 
 ```python

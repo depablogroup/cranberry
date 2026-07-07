@@ -17,6 +17,12 @@ Run a short CPU MD simulation from a canonical coarse-grained PDB:
 cranberry md input_cg_vs_conect.pdb --steps 1000 --output-dir md-out --platform CPU
 ```
 
+Restart from a previous MD checkpoint. Restart appends to `output.dcd`, `log`, and `detailed.log` in the output directory; missing output files are created with a warning. Cranberry also checks restart metadata from `args.json` when available and archives distinct previous metadata under `args_history/`:
+
+```bash
+cranberry md input_cg_vs_conect.pdb --steps 1000 --restart-from md-out/checkpoint.chk --output-dir md-out --platform CPU
+```
+
 Common `md` options:
 
 ```text
@@ -28,6 +34,7 @@ Common `md` options:
 --timestep FS          integration timestep in femtoseconds, default 10
 --report-interval N    steps between output reports, default min(steps, 1000)
 --platform NAME        OpenMM platform name, default CPU; use default to let OpenMM choose
+--restart-from CHK     OpenMM checkpoint to restart from
 --no-overwrite         fail if default MD output files already exist
 ```
 

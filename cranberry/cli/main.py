@@ -50,6 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
     md_parser.add_argument("--timestep", type=float, default=10.0, help="integration timestep in femtoseconds")
     md_parser.add_argument("--report-interval", type=int, default=None, help="steps between output reports; defaults to min(steps, 1000)")
     md_parser.add_argument("--platform", default="CPU", help="OpenMM platform name; use 'default' to let OpenMM choose")
+    md_parser.add_argument("--restart-from", type=Path, default=None, help="OpenMM checkpoint to restart from")
     md_parser.add_argument("--no-overwrite", action="store_true", help="fail if default MD output files already exist")
     md_parser.set_defaults(func=_md)
 
@@ -98,12 +99,15 @@ def _md(args: argparse.Namespace) -> int:
         timestep=args.timestep * unit.femtosecond,
         report_interval=args.report_interval,
         platform=platform,
+        restart_from=args.restart_from,
         overwrite=not args.no_overwrite,
     )
     print(f"output directory: {result.output_dir}")
     print(f"trajectory: {result.dcd_path}")
     print(f"log: {result.log_path}")
     print(f"detailed log: {result.detailed_log_path}")
+    if result.restart_from_path is not None:
+        print(f"restarted from: {result.restart_from_path}")
     print(f"checkpoint: {result.checkpoint_path}")
     print(f"final pdb: {result.final_pdb_path}")
     return 0

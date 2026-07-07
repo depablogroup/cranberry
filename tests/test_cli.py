@@ -43,3 +43,28 @@ def test_cli_md_smoke(tmp_path, capsys):
     assert (tmp_path / "args.json").exists()
     assert (tmp_path / "checkpoint.chk").exists()
     assert (tmp_path / "final.pdb").exists()
+
+
+def test_cli_md_restart_smoke(tmp_path, capsys):
+    path = data_path("examples/2ntCG_cg_vs_conect.pdb")
+    assert main(["md", str(path), "--steps", "1", "--report-interval", "1", "--output-dir", str(tmp_path), "--platform", "CPU"]) == 0
+    capsys.readouterr()
+    assert main([
+        "md",
+        str(path),
+        "--steps",
+        "1",
+        "--report-interval",
+        "1",
+        "--output-dir",
+        str(tmp_path),
+        "--restart-from",
+        str(tmp_path / "checkpoint.chk"),
+        "--platform",
+        "CPU",
+    ]) == 0
+    captured = capsys.readouterr()
+    assert "restarted from:" in captured.out
+    assert (tmp_path / "checkpoint.chk").exists()
+    detailed_steps = [line.split(",", 1)[0] for line in (tmp_path / "detailed.log").read_text().splitlines()[1:]]
+    assert detailed_steps == ["1", "2"]
