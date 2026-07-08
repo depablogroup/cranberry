@@ -7,6 +7,7 @@
 
 installation
 quickstart
+faq
 tutorials/prepare-and-run-md
 tutorials/energy-decomposition
 tutorials/remd

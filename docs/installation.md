@@ -40,6 +40,8 @@ cd /absolute/path/to/your/cranberry
 python -m pip install -e ".[dev]"
 ```
 
+For common installation warnings and troubleshooting, see the [FAQ](faq.md).
+
 ## GPU smoke test
 
 If you plan to use GPU acceleration, run the OpenMM installation self-test first to confirm that your environment can see the available platform(s):
