@@ -58,6 +58,8 @@ sphinx-build -b html docs docs/_build/html
 
 The import check should print a path ending in `cranberry/__init__.py` inside your checkout. If it prints `None`, return to the cloned repository folder and rerun `python -m pip install -e ".[dev]"` in the activated environment.
 
+For install troubleshooting, see the [FAQ](https://github.com/yihengwuKP/cranberry/blob/main/docs/faq.md).
+
 If you prefer a CPU-only workflow, this is enough. If you want GPU execution, keep reading.
 
 ## GPU Development
