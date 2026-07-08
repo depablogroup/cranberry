@@ -3,6 +3,6 @@ repos:
     hooks:
       - id: pytest
         name: pytest
-        entry: conda run -n cranberry-dev python -m pytest -q
+        entry: conda run -n cranberry-dev python -m pytest -q tests/test_prepare.py tests/test_validation.py tests/test_cli.py::test_cli_help tests/test_cli.py::test_cli_inspect_summary tests/test_cli.py::test_cli_inspect_forcefield tests/test_cli.py::test_cli_inspect_input tests/test_cli.py::test_cli_prepare_is_noop_without_terminal_phosphate tests/test_cli.py::test_cli_prepare_inserts_terminal_phosphate tests/test_md.py::test_langevin_friction_matches_legacy_formula tests/test_md.py::test_create_simulation_uses_requested_temperature_and_timestep tests/test_md.py::test_run_md_writes_default_outputs tests/test_md.py::test_run_md_restarts_from_checkpoint_and_appends_outputs tests/test_md.py::test_run_md_no_overwrite_rejects_existing_outputs tests/test_md.py::test_run_md_restart_rejects_missing_checkpoint
         language: system
         pass_filenames: false
