@@ -9,6 +9,7 @@ conda create -n cranberry-dev python=3.11
 conda activate cranberry-dev
 cd /path/to/cranberry
 python -m pip install -e ".[dev]"
+pre-commit install
 ```
 
 If the environment already exists:
@@ -16,7 +17,10 @@ If the environment already exists:
 ```bash
 conda activate cranberry-dev
 python -m pip install -e ".[dev]"
+pre-commit install
 ```
+
+The installed Git pre-commit hook runs `conda run -n cranberry-dev python -m pytest -q` locally before each commit.
 
 If you want to validate GPU support before running Cranberry on an accelerator, check OpenMM first:
 

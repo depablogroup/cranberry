@@ -1,0 +1,8 @@
+repos:
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: conda run -n cranberry-dev python -m pytest -q
+        language: system
+        pass_filenames: false
