@@ -13,7 +13,7 @@ Implemented:
 - package import as `cranberry`
 - packaged model assets: XML plus `cranberry-v1-alpha.1.h5`
 - canonical input validation
-- `cranberry prepare` and `cranberry cg` canonicalization workflow for already coarse-grained CRANBERRY PDBs
+- `cranberry prepare` canonicalization workflow for already coarse-grained CRANBERRY PDBs, with `cranberry cg` as a short alias
 - `CranberryForceField.createSystem()`
 - `cranberry energy` and `cranberry.energy.compute_energy()`
 - `cranberry md` and `cranberry.md.run_md()`
@@ -121,7 +121,7 @@ cranberry md cranberry/data/examples/2ntCG_cg_vs_conect.pdb \
 Important current limitations:
 
 - CI is CPU-only, so GPU behavior is not validated in GitHub Actions.
-- The package defaults to CPU for predictable local and CI behavior.
+- The package defaults to CPU for predictable local and CI behavior, and the MD default timestep is 5 fs.
 - GPU restart behavior still uses the same OpenMM checkpoint contract, so the restart checkpoint must be compatible with the selected platform and model.
 
 ## Quickstart
@@ -134,7 +134,7 @@ cranberry inspect forcefield
 cranberry inspect data
 ```
 
-Prepare a canonical coarse-grained input. Today the default path is a validation-only check: if no terminal-phosphate insertion is requested, Cranberry reports that nothing needs to be changed and does not write a new file. Use `--add-terminal-phosphate` only when you want Cranberry to add missing 5'-terminal phosphate context near a chain end for sugar-puckering analysis in the coarse-grained model:
+Prepare a canonical coarse-grained input. `cranberry prepare` is the primary command name, and `cranberry cg` is the short alias. Today the default path is a validation-only check: if no terminal-phosphate insertion is requested, Cranberry reports that nothing needs to be changed and does not write a new file. Use `--add-terminal-phosphate` only when you want Cranberry to add missing 5'-terminal phosphate context near a chain end for sugar-puckering analysis in the coarse-grained model:
 
 ```bash
 cranberry prepare cranberry/data/examples/2ntCG_cg_vs_conect.pdb --add-terminal-phosphate

@@ -47,7 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
     _add_prepare_parser(subparsers, "prepare", "prepare a canonical CRANBERRY CG PDB")
-    _add_prepare_parser(subparsers, "cg", "canonicalize a coarse-grained CRANBERRY PDB")
+    _add_prepare_parser(subparsers, "cg", "short alias for prepare a canonical CRANBERRY CG PDB")
     for command in _COMMANDS:
         subparser = subparsers.add_parser(
             command,

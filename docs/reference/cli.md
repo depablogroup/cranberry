@@ -27,7 +27,7 @@ Restart from a previous MD checkpoint. Restart appends to `output.dcd`, `log`, a
 cranberry md input_cg_vs_conect.pdb --steps 1000 --restart-from md-out/checkpoint.chk --output-dir md-out --platform CPU
 ```
 
-`cranberry prepare` and `cranberry cg` currently operate on already coarse-grained CRANBERRY inputs rather than full atomistic structures. By default they validate the canonical CG PDB, print that nothing needs to be changed, and do not write a new file. When `--add-terminal-phosphate` is enabled, Cranberry rewrites the PDB to insert a `P` bead at each chain start missing one and adds the corresponding `P-S3` `CONECT` bond. This is mainly useful when you want phosphate context near a chain end for the coarse-grained sugar-puckering estimate.
+`cranberry prepare` is the primary command name, and `cranberry cg` is its short alias. They currently operate on already coarse-grained CRANBERRY inputs rather than full atomistic structures. By default they validate the canonical CG PDB, print that nothing needs to be changed, and do not write a new file. When `--add-terminal-phosphate` is enabled, Cranberry rewrites the PDB to insert a `P` bead at each chain start missing one and adds the corresponding `P-S3` `CONECT` bond. This is mainly useful when you want phosphate context near a chain end for the coarse-grained sugar-puckering estimate.
 
 Common `prepare` options:
 
@@ -45,7 +45,7 @@ Common `md` options:
 --model MODEL          force-field model, default resolves to cranberry-v1-alpha.1
 --temperature K        temperature in kelvin, default 298
 --salt MM              salt concentration in millimolar, default 150
---timestep FS          integration timestep in femtoseconds, default 10
+--timestep FS          integration timestep in femtoseconds, default 5
 --report-interval N    steps between output reports, default min(steps, 1000)
 --platform NAME        OpenMM platform name, default CPU; use default to let OpenMM choose
 --restart-from CHK     OpenMM checkpoint to restart from
