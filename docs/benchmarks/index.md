@@ -2,7 +2,7 @@
 
 Benchmarks are separate from tests. Continuous integration should only run tiny benchmark smoke checks; full CPU/GPU benchmarks should be manual or scheduled and published here as snapshots.
 
-The current benchmark tab is the latest published MD snapshot for the bundled canonical systems. It includes a speed-vs-system-size plot and a table of per-system throughput.
+The benchmark runner writes JSON snapshots under `benchmarks/results/` and regenerates this docs section. That means a new benchmark on another machine can update the published plots by committing the new JSON plus the generated benchmark docs artifacts.
 
 ```{toctree}
 :maxdepth: 1
@@ -10,4 +10,14 @@ The current benchmark tab is the latest published MD snapshot for the bundled ca
 current
 ```
 
-The first benchmark slice is MD only. The next planned snapshots should add CPU vs GPU comparison rows, MPS on/off runs, and later REMD once that workflow exists.
+## Available snapshots
+
+| Series | Generated | Platform | MPS | GPU | Raw JSON |
+| --- | --- | --- | ---: | --- | --- |
+| `nvidia-geforce-rtx-2060` | `2026-07-08T21:17:19.546056+00:00` | `CUDA` | `False` | `NVIDIA GeForce RTX 2060` | `nvidia-geforce-rtx-2060.json` |
+
+## Planned expansion
+
+- Add explicit CPU, CUDA, and later MPS series side by side for the same bundled canonical systems.
+- Add multi-process MPS demonstrations later as separate benchmark kinds rather than mixing them into the first MD baseline.
+- Add REMD benchmark series after the REMD workflow exists.

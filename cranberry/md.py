@@ -42,7 +42,7 @@ def create_simulation(
     model: str = "default",
     temperature=298 * unit.kelvin,
     salt_concentration=150 * unit.millimolar,
-    timestep=10 * unit.femtosecond,
+    timestep=5 * unit.femtosecond,
     platform: str | None = "CPU",
     restart_from: str | Path | None = None,
 ) -> app.Simulation:
@@ -89,7 +89,7 @@ def run_md(
     model: str = "default",
     temperature=298 * unit.kelvin,
     salt_concentration=150 * unit.millimolar,
-    timestep=10 * unit.femtosecond,
+    timestep=5 * unit.femtosecond,
     report_interval: int | None = None,
     platform: str | None = "CPU",
     restart_from: str | Path | None = None,

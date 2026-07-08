@@ -37,6 +37,11 @@ def test_cli_md_smoke(tmp_path, capsys):
     path = data_path("examples/2ntCG_cg_vs_conect.pdb")
     assert main(["md", str(path), "--steps", "1", "--report-interval", "1", "--output-dir", str(tmp_path), "--platform", "CPU"]) == 0
     captured = capsys.readouterr()
+    assert "settings: model=cranberry-v1-alpha.1" in captured.out
+    assert "temperature=298.0 K" in captured.out
+    assert "salt=150.0 mM" in captured.out
+    assert "timestep=5.0 fs" in captured.out
+    assert "platform=CPU" in captured.out
     assert "output directory:" in captured.out
     assert (tmp_path / "output.dcd").exists()
     assert (tmp_path / "log").exists()

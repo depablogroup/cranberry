@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CRANBERRY Benchmark Log-Log Update Review</title>
+  <style>
+    :root { --ink:#18222c; --muted:#5b6670; --line:#d9e0e7; --soft:#f5f7fa; --code:#0f1720; --ok:#137348; --warn:#9a5b00; --accent:#0b66c3; }
+    body { margin:0; color:var(--ink); font:15px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:white; }
+    main { max-width:1120px; margin:0 auto; padding:36px 28px 72px; }
+    h1 { margin:0 0 10px; font-size:32px; line-height:1.15; }
+    h2 { margin:32px 0 12px; padding-top:22px; border-top:1px solid var(--line); font-size:22px; }
+    h3 { margin:20px 0 8px; font-size:17px; }
+    p { margin:0 0 12px; color:var(--muted); }
+    code, pre { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace; }
+    pre { margin:10px 0 0; padding:13px 15px; overflow:auto; color:#edf5ff; background:var(--code); border-radius:8px; font-size:13px; }
+    table { width:100%; border-collapse:collapse; margin:12px 0 0; font-size:14px; }
+    th, td { border-bottom:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+    th { background:var(--soft); }
+    ul { margin:8px 0 0 20px; padding:0; }
+    li { margin:5px 0; }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+    .card { border:1px solid var(--line); border-radius:8px; padding:15px; }
+    .ok { color:var(--ok); font-weight:700; }
+    .warn { color:var(--warn); font-weight:700; }
+    .small { font-size:13px; color:var(--muted); }
+    .pill { display:inline-block; padding:2px 7px; border-radius:999px; background:var(--soft); color:var(--muted); font-size:12px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>CRANBERRY Benchmark Log-Log Update Review</h1>
+  <p>Developer review for the benchmark presentation update: expanded fixture coverage, log-log SVG plotting, a shorter GPU label, and regenerated published benchmark artifacts.</p>
+
+  <h2>Review Finding</h2>
+  <div class="card">
+    <h3><span class="ok">No blocking issues found</span></h3>
+    <p>The benchmark runner still generates JSON-first snapshots and publishes docs from those snapshots, but the visualization now matches the wider system-size range better. The main risk is the usual one for benchmark artifacts: the published snapshot is only as current as the last run on the target machine.</p>
+  </div>
+
+  <h2>Scope</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>Implemented</h3>
+      <ul>
+        <li>Expanded the default CUDA benchmark suite to include <code>rU40</code>, <code>5ml7</code>, and <code>2mi0</code>.</li>
+        <li>Changed the benchmark SVG from linear scatter to a log-log line chart with dots at each measured system.</li>
+        <li>Added a compact GPU card label, rendered as <code>2060</code> for the RTX 2060 snapshot.</li>
+        <li>Regenerated the published benchmark JSON, markdown, and SVG artifacts.</li>
+        <li>Added a regression test for the new system fixtures and short GPU label helper.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Still out of scope</h3>
+      <ul>
+        <li>Multiple benchmark series for CPU, CUDA, and MPS side by side.</li>
+        <li>REMD benchmark publishing.</li>
+        <li>Automatic remote upload/publishing of benchmark snapshots from another machine.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>Important Files</h2>
+  <table>
+    <thead><tr><th>Path</th><th>Review Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>benchmarks/benchmark_md.py</code></td><td>Owns the benchmark fixture map, snapshot schema, snapshot publishing, and the new log-log SVG renderer.</td></tr>
+      <tr><td><code>benchmarks/results/nvidia-geforce-rtx-2060.json</code></td><td>Current published CUDA snapshot for the RTX 2060 machine.</td></tr>
+      <tr><td><code>docs/benchmarks/current.md</code>, <code>docs/benchmarks/index.md</code>, <code>docs/benchmarks/current.svg</code></td><td>Generated benchmark docs and plot artifacts updated from the latest snapshot.</td></tr>
+      <tr><td><code>tests/test_benchmark_md.py</code></td><td>Locks the new fixture set and the short GPU label helper.</td></tr>
+      <tr><td><code>cranberry/md.py</code>, <code>cranberry/cli/main.py</code></td><td>Carry the earlier MD default timestep change to keep runtime behavior and CLI help consistent.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Core Behavior</h2>
+  <h3>Benchmark Suite</h3>
+  <p>The default benchmark suite now includes seven canonical systems instead of four. The new entries are the examples the user added to the repository: <code>rU40</code>, <code>5ml7</code>, and <code>2mi0</code>. The runner still times each system individually, then sorts the rows by nucleotide count before publishing.</p>
+  <pre><code>SYSTEMS = {
+    "157d": "examples/157d_cg_vs_conect.pdb",
+    "1l2x": "examples/1l2x_cg_vs_conect.pdb",
+    "1zih": "examples/1zih_cg_vs_conect.pdb",
+    "2mi0": "examples/2MI0_cg_vs_conect.pdb",
+    "2ntCG": "examples/2ntCG_cg_vs_conect.pdb",
+    "5ml7": "examples/5ml7_cg_vs_conect.pdb",
+    "rU40": "examples/rU40_cg_vs_conect.pdb",
+}</code></pre>
+
+  <h3>Log-Log Plot</h3>
+  <p>The previous linear scatter plot was too cramped for the broadened system-size range. The renderer now maps both axes through <code>log10</code>, labels the axes explicitly as log scale, draws a line through the ordered measurements, and keeps the individual dots visible on top of the line.</p>
+  <pre><code>title = escape(f"CRANBERRY MD throughput: {snapshot.platform} {legend_label}{' + MPS' if snapshot.mps_enabled else ''}")
+...
+&lt;polyline points="..." fill="none" stroke="#0b66c3" stroke-width="2.5" /&gt;
+&lt;circle ... /&gt;</code></pre>
+  <p>The legend uses a compact short label so the chart remains readable on narrower previews.</p>
+
+  <h3>Published Snapshot</h3>
+  <p>The regenerated current snapshot reflects the new fixture set and the short label. The docs now state log scale on both axes and point to the current GPU as <code>2060</code> instead of the full card name in the chart title.</p>
+
+  <h2>Validation</h2>
+  <table>
+    <thead><tr><th>Check</th><th>Status</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>conda run -n cranberry-dev python benchmarks/benchmark_md.py --platform CUDA</code></td><td class="ok">passed</td><td>Regenerated the published benchmark snapshot, markdown, and SVG.</td></tr>
+      <tr><td><code>conda run -n cranberry-dev python -m pytest tests/test_benchmark_md.py tests/test_md.py tests/test_cli.py -q</code></td><td class="ok">passed</td><td>22 tests passed in 56.37 s.</td></tr>
+      <tr><td><code>python -m py_compile benchmarks/benchmark_md.py tests/test_benchmark_md.py</code></td><td class="ok">passed</td><td>Syntax check passed after the renderer rewrite.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Residual Risk</h2>
+  <ul>
+    <li><span class="warn">Benchmark freshness:</span> the published snapshot is still a point-in-time artifact and must be rerun on each target machine if you want up-to-date throughput numbers.</li>
+    <li><span class="warn">Dataset completeness:</span> the chart now spans more example systems, but it still represents a single GPU/card snapshot until other machines are published.</li>
+  </ul>
+
+  <h2>Recommendation</h2>
+  <p><span class="ok">Approve this benchmark presentation update.</span> It makes the current benchmark page more legible for the RNA system-size range and keeps the snapshot pipeline aligned with the docs-first workflow.</p>
+</main>
+</body>
+</html>

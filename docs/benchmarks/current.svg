@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" viewBox="0 0 960 560" role="img" aria-labelledby="title desc">
+  <title id="title">CRANBERRY MD throughput: CUDA 2060</title>
+  <desc id="desc">Log-log line plot of MD throughput in ns/day versus nucleotides across the bundled canonical benchmark systems.</desc>
+  <rect width="100%" height="100%" fill="#ffffff" />
+  <text x="110" y="26" font-size="18" font-weight="700" fill="#18222c">CRANBERRY MD throughput: CUDA 2060</text>
+  <text x="110" y="46" font-size="12" fill="#5b6670">NVIDIA GeForce RTX 2060 | OpenMM 8.5.2</text>
+  <text x="110" y="542" font-size="12" fill="#5b6670">x-axis: system size (nucleotides, log scale)</text>
+  <text x="18" y="250.0" transform="rotate(-90 18 250.0)" font-size="12" fill="#5b6670">y-axis: MD throughput (ns/day, log scale)</text>
+  <g>
+    <line x1="188.4" y1="50" x2="188.4" y2="450" stroke="#d9e0e7" stroke-width="1" />
+<text x="188.4" y="474" text-anchor="middle" font-size="12" fill="#5b6670">2</text><line x1="343.4" y1="50" x2="343.4" y2="450" stroke="#d9e0e7" stroke-width="1" />
+<text x="343.4" y="474" text-anchor="middle" font-size="12" fill="#5b6670">5</text><line x1="460.7" y1="50" x2="460.7" y2="450" stroke="#d9e0e7" stroke-width="1" />
+<text x="460.7" y="474" text-anchor="middle" font-size="12" fill="#5b6670">10</text><line x1="578.0" y1="50" x2="578.0" y2="450" stroke="#d9e0e7" stroke-width="1" />
+<text x="578.0" y="474" text-anchor="middle" font-size="12" fill="#5b6670">20</text><line x1="733.0" y1="50" x2="733.0" y2="450" stroke="#d9e0e7" stroke-width="1" />
+<text x="733.0" y="474" text-anchor="middle" font-size="12" fill="#5b6670">50</text><line x1="850.3" y1="50" x2="850.3" y2="450" stroke="#d9e0e7" stroke-width="1" />
+<text x="850.3" y="474" text-anchor="middle" font-size="12" fill="#5b6670">100</text><line x1="110" y1="368.5" x2="920" y2="368.5" stroke="#d9e0e7" stroke-width="1" />
+<text x="98" y="372.5" text-anchor="end" font-size="12" fill="#5b6670">500</text><line x1="110" y1="240.6" x2="920" y2="240.6" stroke="#d9e0e7" stroke-width="1" />
+<text x="98" y="244.6" text-anchor="end" font-size="12" fill="#5b6670">1000</text><line x1="110" y1="112.6" x2="920" y2="112.6" stroke="#d9e0e7" stroke-width="1" />
+<text x="98" y="116.6" text-anchor="end" font-size="12" fill="#5b6670">2000</text>
+  </g>
+  <line x1="110" y1="450" x2="920" y2="450" stroke="#18222c" stroke-width="1.5" />
+  <line x1="110" y1="50" x2="110" y2="450" stroke="#18222c" stroke-width="1.5" />
+  <polyline points="188.4,88.7 491.5,302.4 608.8,340.7 628.8,344.1 695.3,193.3 707.5,333.8 841.6,411.3" fill="none" stroke="#0b66c3" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />
+  <g>
+    <circle cx="188.4" cy="88.7" r="6" fill="#0b66c3" stroke="#ffffff" stroke-width="2" /><circle cx="491.5" cy="302.4" r="6" fill="#0b66c3" stroke="#ffffff" stroke-width="2" /><circle cx="608.8" cy="340.7" r="6" fill="#0b66c3" stroke="#ffffff" stroke-width="2" /><circle cx="628.8" cy="344.1" r="6" fill="#0b66c3" stroke="#ffffff" stroke-width="2" /><circle cx="695.3" cy="193.3" r="6" fill="#0b66c3" stroke="#ffffff" stroke-width="2" /><circle cx="707.5" cy="333.8" r="6" fill="#0b66c3" stroke="#ffffff" stroke-width="2" /><circle cx="841.6" cy="411.3" r="6" fill="#0b66c3" stroke="#ffffff" stroke-width="2" />
+  </g>
+  <g transform="translate(770,58)">
+    <rect x="0" y="0" width="140" height="36" rx="8" fill="#f6f8fb" stroke="#d9e0e7" />
+    <line x1="14" y1="18" x2="44" y2="18" stroke="#0b66c3" stroke-width="2.5" stroke-linecap="round" />
+    <circle cx="29" cy="18" r="5" fill="#0b66c3" stroke="#ffffff" stroke-width="1.5" />
+    <text x="54" y="22" font-size="13" fill="#18222c">2060</text>
+  </g>
+</svg>

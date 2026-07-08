@@ -65,7 +65,7 @@ def test_run_md_writes_default_outputs(tmp_path):
     assert "pdb_sha256" in args
     assert args["temperature_kelvin"] == pytest.approx(298)
     assert args["salt_millimolar"] == pytest.approx(150)
-    assert args["timestep_femtosecond"] == pytest.approx(10)
+    assert args["timestep_femtosecond"] == pytest.approx(5)
 
     detailed = result.detailed_log_path.read_text().splitlines()
     assert detailed[0].startswith('#"Step","Time (ps)","Potential Energy (kJ/mole)","bond (kJ/mole)"')

@@ -1,0 +1,98 @@
+{
+  "benchmark_kind": "md-single-system-suite",
+  "cranberry_version": "1.0.0a1",
+  "cuda_visible_devices": null,
+  "driver_version": "595.71.05",
+  "generated_at": "2026-07-08T21:17:19.546056+00:00",
+  "gpu_name": "NVIDIA GeForce RTX 2060",
+  "model": "default",
+  "mps_enabled": false,
+  "openmm_version": "8.5.2",
+  "platform": "CUDA",
+  "rows": [
+    {
+      "atoms": 15,
+      "fixture": "examples/2ntCG_cg_vs_conect.pdb",
+      "ns_per_day": 2276.266203251531,
+      "nucleotides": 2,
+      "seconds_per_step": 0.00018978448099915112,
+      "steps": 1000,
+      "system_id": "2ntCG",
+      "timestep_fs": 5.0,
+      "wall_seconds": 0.18978448099915113
+    },
+    {
+      "atoms": 95,
+      "fixture": "examples/1zih_cg_vs_conect.pdb",
+      "ns_per_day": 715.4724166151418,
+      "nucleotides": 12,
+      "seconds_per_step": 0.0006037968620003085,
+      "steps": 1000,
+      "system_id": "1zih",
+      "timestep_fs": 5.0,
+      "wall_seconds": 0.6037968620003085
+    },
+    {
+      "atoms": 190,
+      "fixture": "examples/157d_cg_vs_conect.pdb",
+      "ns_per_day": 581.4900577469111,
+      "nucleotides": 24,
+      "seconds_per_step": 0.0007429189790000237,
+      "steps": 1000,
+      "system_id": "157d",
+      "timestep_fs": 5.0,
+      "wall_seconds": 0.7429189790000237
+    },
+    {
+      "atoms": 216,
+      "fixture": "examples/1l2x_cg_vs_conect.pdb",
+      "ns_per_day": 570.7977530837852,
+      "nucleotides": 27,
+      "seconds_per_step": 0.0007568354949999048,
+      "steps": 1000,
+      "system_id": "1l2x",
+      "timestep_fs": 5.0,
+      "wall_seconds": 0.7568354949999048
+    },
+    {
+      "atoms": 319,
+      "fixture": "examples/rU40_cg_vs_conect.pdb",
+      "ns_per_day": 1291.4732609451116,
+      "nucleotides": 40,
+      "seconds_per_step": 0.00033450169900061153,
+      "steps": 1000,
+      "system_id": "rU40",
+      "timestep_fs": 5.0,
+      "wall_seconds": 0.33450169900061155
+    },
+    {
+      "atoms": 342,
+      "fixture": "examples/2MI0_cg_vs_conect.pdb",
+      "ns_per_day": 603.5368828857524,
+      "nucleotides": 43,
+      "seconds_per_step": 0.0007157806129998789,
+      "steps": 1000,
+      "system_id": "2mi0",
+      "timestep_fs": 5.0,
+      "wall_seconds": 0.7157806129998789
+    },
+    {
+      "atoms": 760,
+      "fixture": "examples/5ml7_cg_vs_conect.pdb",
+      "ns_per_day": 396.62079450295147,
+      "nucleotides": 95,
+      "seconds_per_step": 0.0010892015900008118,
+      "steps": 1000,
+      "system_id": "5ml7",
+      "timestep_fs": 5.0,
+      "wall_seconds": 1.0892015900008118
+    }
+  ],
+  "salt_millimolar": 150.0,
+  "schema_version": 1,
+  "series_name": "nvidia-geforce-rtx-2060",
+  "steps": 1000,
+  "temperature_kelvin": 298.0,
+  "timestep_fs": 5.0,
+  "warmup_steps": 10
+}
