@@ -45,6 +45,16 @@ cd cranberry
 python -m pip install -e ".[dev]"
 ```
 
+For GPU development, prefer installing OpenMM with conda before the editable Cranberry install so that OpenMM's CUDA platform plugin is resolved by conda:
+
+```bash
+conda create -n cranberry-dev -c conda-forge python=3.11 openmm
+conda activate cranberry-dev
+git clone https://github.com/yihengwuKP/cranberry.git
+cd cranberry
+python -m pip install -e ".[dev]"
+```
+
 If you already cloned the repository, skip `git clone` and replace `cd cranberry` with `cd /absolute/path/to/your/cranberry`. The `cd` step must put your shell in the repository checkout before running `python -m pip install -e ".[dev]"`.
 
 Verify the editable install:
@@ -70,11 +80,24 @@ The current workflow is sufficient for GPU-enabled development if your environme
 - OpenMM can see the accelerator platform you want to use
 - you select that platform explicitly or allow OpenMM to choose it
 
-CRANBERRY does not add an extra GPU-specific install layer. Once OpenMM is installed correctly, the same editable install works for CPU and GPU runs:
+CRANBERRY does not add an extra GPU-specific install layer. Once OpenMM is installed correctly, the same editable install works for CPU and GPU runs. If `python -m pip install -e ".[dev]"` installs OpenMM for you, that may be sufficient for CPU use, but GPU users should prefer preinstalling OpenMM from conda-forge:
 
 ```bash
+conda create -n cranberry-dev -c conda-forge python=3.11 openmm
+conda activate cranberry-dev
 python -m pip install -e ".[dev]"
 ```
+
+Before running Cranberry on CUDA, confirm that OpenMM registered the CUDA platform in this environment:
+
+```bash
+python - <<'PY'
+from openmm import Platform
+print([Platform.getPlatform(i).getName() for i in range(Platform.getNumPlatforms())])
+PY
+```
+
+If that list does not include `CUDA`, debug the OpenMM installation before debugging Cranberry.
 
 To run on GPU hardware, pass the OpenMM platform you want:
 
