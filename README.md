@@ -35,14 +35,17 @@ The recommended development flow is:
 2. Install the package in editable mode with dev extras.
 3. Verify the import, CLI, and tests.
 
-For a new environment:
+For a new environment, clone the repository first, then install from inside that cloned folder:
 
 ```bash
 conda create -n cranberry-dev python=3.11
 conda activate cranberry-dev
-cd /path/to/cranberry
+git clone https://github.com/yihengwuKP/cranberry.git
+cd cranberry
 python -m pip install -e ".[dev]"
 ```
+
+If you already cloned the repository, skip `git clone` and replace `cd cranberry` with `cd /absolute/path/to/your/cranberry`. The `cd` step must put your shell in the repository checkout before running `python -m pip install -e ".[dev]"`.
 
 Verify the editable install:
 
@@ -52,6 +55,8 @@ cranberry --help
 python -m pytest -q
 sphinx-build -b html docs docs/_build/html
 ```
+
+The import check should print a path ending in `cranberry/__init__.py` inside your checkout. If it prints `None`, return to the cloned repository folder and rerun `python -m pip install -e ".[dev]"` in the activated environment.
 
 If you prefer a CPU-only workflow, this is enough. If you want GPU execution, keep reading.
 
