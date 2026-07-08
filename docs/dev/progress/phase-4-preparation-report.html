@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CRANBERRY Phase 4 Preparation Review</title>
+  <style>
+    :root { --ink:#18222c; --muted:#5b6670; --line:#d9e0e7; --soft:#f5f7fa; --code:#0f1720; --ok:#137348; --warn:#9a5b00; }
+    body { margin:0; color:var(--ink); font:15px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:white; }
+    main { max-width:1120px; margin:0 auto; padding:36px 28px 72px; }
+    h1 { margin:0 0 10px; font-size:32px; line-height:1.15; }
+    h2 { margin:32px 0 12px; padding-top:22px; border-top:1px solid var(--line); font-size:22px; }
+    h3 { margin:20px 0 8px; font-size:17px; }
+    p { margin:0 0 12px; color:var(--muted); }
+    code, pre { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace; }
+    pre { margin:10px 0 0; padding:13px 15px; overflow:auto; color:#edf5ff; background:var(--code); border-radius:8px; font-size:13px; }
+    table { width:100%; border-collapse:collapse; margin:12px 0 0; font-size:14px; }
+    th, td { border-bottom:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+    th { background:var(--soft); }
+    ul { margin:8px 0 0 20px; padding:0; }
+    li { margin:5px 0; }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+    .card { border:1px solid var(--line); border-radius:8px; padding:15px; }
+    .ok { color:var(--ok); font-weight:700; }
+    .warn { color:var(--warn); font-weight:700; }
+    .small { font-size:13px; color:var(--muted); }
+  </style>
+</head>
+<body>
+<main>
+  <h1>CRANBERRY Phase 4 Preparation Review</h1>
+  <p>Developer review for the first Phase 4 slice: a real preparation/canonicalization workflow with optional terminal-phosphate insertion, plus the CLI, API, tests, and docs needed to expose it.</p>
+
+  <h2>Review Finding</h2>
+  <div class="card">
+    <h3><span class="ok">No blocking issues found</span></h3>
+    <p>The slice is intentionally narrow. The current implementation now distinguishes a true no-op validation path from the phosphate-insertion path, and the main remaining risk is scope rather than immediate correctness: this still does not implement a full upstream coarse-graining pipeline.</p>
+  </div>
+
+  <h2>Scope</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>Implemented</h3>
+      <ul>
+        <li>Added <code>cranberry.prepare.prepare_structure()</code> and <code>PreparedStructureResult</code>.</li>
+        <li>Added <code>cranberry prepare</code> and <code>cranberry cg</code> CLI commands.</li>
+        <li>Added a shared PDB writer that preserves <code>CONECT</code> records.</li>
+        <li>Added a validation-only no-op path for <code>cranberry prepare</code>/<code>cranberry cg</code> when no phosphate insertion is requested.</li><li>Added optional 5'-terminal phosphate insertion for chain-start residues missing <code>P</code>.</li>
+        <li>Updated the public API, CLI reference, quickstart, and preparation tutorial.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Still out of scope</h3>
+      <ul>
+        <li>Full upstream coarse-graining from atomistic or other non-canonical inputs.</li>
+        <li>Any richer model-specific phosphate placement heuristics.</li>
+        <li>REMD and the other optional v1 extras.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>Important Files</h2>
+  <table>
+    <thead><tr><th>Path</th><th>Review Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>cranberry/prepare.py</code></td><td>Owns canonicalization, output writing, and optional terminal-phosphate insertion.</td></tr>
+      <tr><td><code>cranberry/pdbio.py</code></td><td>Shared PDB writer used by both preparation and MD to preserve topology <code>CONECT</code> records.</td></tr>
+      <tr><td><code>cranberry/cli/main.py</code></td><td>Adds thin <code>prepare</code> and <code>cg</code> commands that delegate to the library API.</td></tr>
+      <tr><td><code>tests/test_prepare.py</code></td><td>Locks the canonical copy behavior and the terminal-phosphate insertion path.</td></tr>
+      <tr><td><code>docs/reference/api.md</code>, <code>docs/reference/cli.md</code>, <code>docs/tutorials/prepare-and-run-md.md</code></td><td>Document the new Phase 4 workflow and its current contract.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Core Behavior</h2>
+  <h3>Preparation Workflow</h3>
+  <p><code>prepare_structure()</code> now has two distinct modes. Without terminal-phosphate insertion it validates the canonical coarse-grained PDB and returns without writing any output file. With terminal-phosphate insertion it loads the input through OpenMM, rewrites the structure with canonical <code>CONECT</code> records, and validates the result again.</p>
+  <pre><code>result = prepare_structure(
+    "input_cg_vs_conect.pdb",
+    add_terminal_phosphate=True,
+    output_path="prepared.pdb",
+)</code></pre>
+
+  <h3>5'-Phosphate Insertion</h3>
+  <p>When <code>add_terminal_phosphate=True</code>, the workflow looks only at the first residue of each chain. If that residue already has a <code>P</code> bead, no insertion happens. If it is missing <code>P</code>, Cranberry synthesizes one new <code>P</code> atom, bonds it to the existing <code>S3</code> bead, and increments the insertion count for that chain.</p>
+  <p>The placement heuristic is still a local hack, but it is now more explicit than the first version. The inserted phosphate is placed at a fixed <code>P-S3</code> distance of <code>0.45 nm</code>. When a downstream phosphate is available, the direction is chosen to satisfy two angle targets at the terminal <code>S3</code>: <code>angle(P, S3, S2) = 2.356 rad</code> and <code>angle(P, S3, next P) = 1.920 rad</code>. When no downstream phosphate is available, Cranberry falls back to the single-angle construction against <code>S2</code> only. This is deterministic and test-covered, but it remains a geometric heuristic rather than a chemically fitted coarse-graining procedure.</p>
+  <h3>Algorithm Detail</h3>
+  <p>The implementation lives in <code>cranberry/prepare.py</code> and has three nested steps:</p>
+  <ol>
+    <li>Detect whether the first residue of a chain is missing <code>P</code>. If not, return the topology unchanged for that chain.</li>
+    <li>Gather the local geometric anchors: the current residue <code>S2</code> and <code>S3</code>, plus the next available downstream <code>P</code> if one exists later in the same chain.</li>
+    <li>Solve for a unit direction from <code>S3</code> and place the new phosphate at <code>S3 + direction * 0.45 nm</code>.</li>
+  </ol>
+  <p>In the two-angle branch, the code first builds an orthonormal local basis around the terminal sugar:</p>
+  <ul>
+    <li><code>a</code> is the normalized <code>S3 -&gt; S2</code> direction.</li>
+    <li><code>b</code> is the normalized <code>S3 -&gt; next P</code> direction.</li>
+    <li><code>c</code> is the in-plane component of <code>b</code> orthogonal to <code>a</code>.</li>
+    <li><code>n</code> is the plane normal from <code>a x c</code>.</li>
+  </ul>
+  <p>The phosphate direction is then solved in that basis as <code>d = x a + y c +/- z n</code>, where:</p>
+  <pre><code>x = cos(angle(P, S3, S2))
+y = (cos(angle(P, S3, next P)) - x * dot(a, b)) / ||b - a * dot(a, b)||
+z = sqrt(max(0, 1 - x^2 - y^2))</code></pre>
+  <p>That construction guarantees the requested distance and both target angles when the local geometry is consistent enough to admit a solution. The code then chooses between the <code>+z</code> and <code>-z</code> branches deterministically by preferring the candidate with the larger <code>z</code> component in the lab frame. This is not a physical energy minimization; it is just a stable branch-selection rule so repeated runs place the bead identically.</p>
+  <p>If the two-angle solve is numerically ill-conditioned, for example because the downstream phosphate direction is nearly collinear with <code>S3 -&gt; S2</code> or the requested constraints are inconsistent in the local basis, Cranberry falls back to a single-angle construction. In that branch it picks an arbitrary but deterministic perpendicular direction to <code>S3 -&gt; S2</code> and uses:</p>
+  <pre><code>direction = u * cos(2.356) + p * sin(2.356)</code></pre>
+  <p>where <code>u</code> is the normalized <code>S3 -&gt; S2</code> direction and <code>p</code> is a deterministic perpendicular unit vector.</p>
+  <p>The behavior is intentionally conservative:</p>
+  <ul>
+    <li>Only chain-start residues are eligible.</li>
+    <li>The default prepare path is deliberately a no-op and does not create a renamed copy.</li>
+    <li>Only missing <code>P</code> beads are inserted.</li>
+    <li>All other residues are left unchanged.</li>
+    <li>The resulting structure is revalidated before the command returns success.</li>
+  </ul>
+  <h3>What The Tests Actually Lock</h3>
+  <ul>
+    <li>The no-op path returns success without writing an output file.</li>
+    <li>The phosphate-writing path creates a real <code>P-S3</code> bond and does not create the earlier serial-mapping bug that produced a spurious bond.</li>
+    <li>The written coordinates satisfy the current distance and angle targets within small tolerances.</li>
+    <li>The output still passes canonical PDB validation after insertion.</li>
+  </ul>
+
+  <h2>Validation</h2>
+  <table>
+    <thead><tr><th>Check</th><th>Status</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>conda run -n cranberry-dev python -m pytest -q tests/test_prepare.py</code></td><td class="ok">passed</td><td>The tightened prepare tests now cover no-op behavior, bond correctness, and the current phosphate geometry constraints.</td></tr>
+      <tr><td><code>conda run -n cranberry-dev sphinx-build -b html docs docs/_build/html</code></td><td class="ok">passed</td><td>Docs build succeeded after the CLI/API/tutorial updates.</td></tr>
+      <tr><td><code>python -m py_compile</code> on changed files</td><td class="ok">passed</td><td>Compilation passed after the md.py helper restoration.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Residual Risk</h2>
+  <ul>
+    <li><span class="warn">Scope:</span> this is the first preparation slice, not the full coarse-graining pipeline.</li>
+    <li><span class="warn">Geometry:</span> the phosphate placement is still a heuristic hack. It satisfies the current distance/angle targets, but it is not yet derived from a fuller upstream coarse-graining or fitting procedure.</li>
+  </ul>
+
+  <h2>Next</h2>
+  <p>Finish the remaining Phase 4 coarse-graining work, then move on to REMD and the other optional extras once the preparation contract is stable.</p>
+</main>
+</body>
+</html>

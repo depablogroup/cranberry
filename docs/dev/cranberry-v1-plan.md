@@ -212,6 +212,11 @@ During migration, use `CRANBERRY_workshop/cranberry-workshop-919771f4-gpu/` as t
 - CI may run only a tiny benchmark smoke check.
 - Full CPU/GPU benchmarks should be manual or scheduled, because GitHub runners are noisy and GPU availability is unreliable.
 - Benchmark results should be machine-readable and suitable for publishing in docs.
+- Use the four bundled canonical systems (`157d`, `1l2x`, `2ntCG`, `1zih`) as the first baseline set.
+- Publish a benchmark tab under `docs/benchmarks/` with a committed snapshot, raw JSON, and a simple speed-vs-system-size plot.
+- Capture the local RTX 2060/CUDA machine as an initial baseline, then add later CPU, CUDA, and MPS series for cross-cluster comparison.
+- Add multi-process MPS demonstrations later as a distinct benchmark kind rather than mixing them into the first one-process MD baseline.
+- Add REMD throughput once the REMD workflow exists, but keep that as a separate series from MD.
 - Before v1 release, add appropriate developer-facing documentation and comments for the force-field construction internals, especially `add_bond`, `add_angle`, `add_dihedral`, `add_sugar_pucker`, stacking, pairing, WCA, spline, and electrostatics. These notes should explain the scientific formula mapping from `OpenMM-CGRNA` to Cranberry without making the public docs too implementation-heavy.
 
 ## Documentation

@@ -7,6 +7,7 @@ def test_cli_help(capsys):
     captured = capsys.readouterr()
     assert "CRANBERRY coarse-grained RNA" in captured.out
     assert "prepare" in captured.out
+    assert "cg" in captured.out
     assert "inspect" in captured.out
 
 
@@ -68,3 +69,31 @@ def test_cli_md_restart_smoke(tmp_path, capsys):
     assert (tmp_path / "checkpoint.chk").exists()
     detailed_steps = [line.split(",", 1)[0] for line in (tmp_path / "detailed.log").read_text().splitlines()[1:]]
     assert detailed_steps == ["1", "2"]
+
+
+def test_cli_prepare_is_noop_without_terminal_phosphate(tmp_path, capsys):
+    path = data_path("examples/2ntCG_cg_vs_conect.pdb")
+    output = tmp_path / "prepared.pdb"
+    assert main(["prepare", str(path), "--output", str(output)]) == 0
+    captured = capsys.readouterr()
+    assert "Nothing to do:" in captured.out
+    assert "--add-terminal-phosphate" in captured.out
+    assert not output.exists()
+
+
+def test_cli_prepare_inserts_terminal_phosphate(tmp_path, capsys):
+    path = data_path("examples/2ntCG_cg_vs_conect.pdb")
+    output = tmp_path / "prepared.pdb"
+    assert main(["prepare", str(path), "--output", str(output), "--add-terminal-phosphate"]) == 0
+    captured = capsys.readouterr()
+    assert "added terminal phosphates: 1" in captured.out
+    assert output.exists()
+
+
+def test_cli_cg_alias_is_noop_without_terminal_phosphate(tmp_path, capsys):
+    path = data_path("examples/2ntCG_cg_vs_conect.pdb")
+    output = tmp_path / "cg.pdb"
+    assert main(["cg", str(path), "--output", str(output)]) == 0
+    captured = capsys.readouterr()
+    assert "Nothing to do:" in captured.out
+    assert not output.exists()

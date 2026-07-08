@@ -78,7 +78,7 @@ def validate_canonical_pdb(path: str | Path) -> ValidationResult:
         expected = EXPECTED_BEADS[residue.name]
         missing = sorted(expected - names)
         if missing == ["P"] and residue in chain_start_residues:
-            warnings.append(f"chain {residue.chain.index} first residue is missing terminal phosphate P")
+            warnings.append(f"chain {residue.chain.index} first residue doesn't have terminal phosphate P. This is usually fine or recomended. You should only use cranberry prepare *.pdb --add-terminal-phosphate to add 5'-phosphate if you want to get access to the sugar puckering state of the 5'-terminal nucleotide.")
         elif missing:
             errors.append(
                 f"residue {residue.index} {residue.name} missing expected beads: {', '.join(missing)}"

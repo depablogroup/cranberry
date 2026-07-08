@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import io
 import json
 import warnings
 from dataclasses import dataclass
@@ -9,11 +8,17 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import TextIO
 
+try:
+    __version__ = version("cranberry-rna")
+except PackageNotFoundError:  # pragma: no cover - editable source tree before install
+    __version__ = "0+unknown"
+
 import openmm as mm
 from openmm import LangevinMiddleIntegrator, Platform, unit
 from openmm import app
 
 from cranberry.forcefield import FORCE_GROUP_IDS, CranberryForceField, default_model_name, get_model_spec
+from cranberry.pdbio import write_pdb_with_conect
 from cranberry.validation import validate_canonical_pdb
 
 
@@ -164,6 +169,12 @@ def run_md(
         previous_args = _load_restart_args(result.args_path)
         if previous_args is not None:
             _check_restart_compatibility(previous_args, run_args, result.args_path)
+        else:
+            warnings.warn(
+                "Restart compatibility cannot be checked without args.json from a previous run; proceeding with checkpoint state only.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
     simulation = create_simulation(
         pdb_path,
@@ -195,13 +206,107 @@ def run_md(
     simulation.saveCheckpoint(str(result.checkpoint_path))
     simulation.context.computeVirtualSites()
     state = simulation.context.getState(getPositions=True)
-    _write_pdb_with_conect(result.final_pdb_path, simulation.topology, state.getPositions())
+    write_pdb_with_conect(result.final_pdb_path, simulation.topology, state.getPositions())
 
     for reporter in simulation.reporters:
         close = getattr(reporter, "close", None)
         if close is not None:
             close()
     return result
+
+
+def _as_quantity(value, default_unit):
+    if hasattr(value, "unit"):
+        return value
+    return value * default_unit
+
+
+def _build_args(*, pdb_path, model, steps, report_interval, temperature, salt_concentration, timestep, platform, restart_from, append_outputs, dcd_append, log_append, detailed_append, overwrite):
+    pdb_path = Path(pdb_path)
+    return {
+        "schema_version": 1,
+        "run_kind": "md",
+        "pdb_path": str(pdb_path),
+        "pdb_sha256": _sha256(pdb_path),
+        "model": model,
+        "steps": int(steps),
+        "report_interval": int(report_interval),
+        "temperature_kelvin": float(_as_quantity(temperature, unit.kelvin).value_in_unit(unit.kelvin)),
+        "salt_millimolar": float(_as_quantity(salt_concentration, unit.millimolar).value_in_unit(unit.millimolar)),
+        "timestep_femtosecond": float(_as_quantity(timestep, unit.femtosecond).value_in_unit(unit.femtosecond)),
+        "platform": platform,
+        "restart_from": str(restart_from) if restart_from is not None else None,
+        "append_outputs": bool(append_outputs),
+        "dcd_append": bool(dcd_append),
+        "log_append": bool(log_append),
+        "detailed_append": bool(detailed_append),
+        "overwrite": bool(overwrite),
+        "cranberry_version": __version__,
+        "openmm_version": getattr(mm, "__version__", None),
+    }
+
+
+def _write_args(path: Path, args: dict) -> None:
+    path = Path(path)
+    payload = json.dumps(args, indent=2, sort_keys=True)
+    text = payload + "\n"
+    if path.exists():
+        existing = path.read_text()
+        if existing == text:
+            return
+        history_path = _next_args_history_path(path.parent / "args_history")
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        history_path.write_text(existing if existing.endswith("\n") else existing + "\n")
+    path.write_text(text)
+
+
+def _load_restart_args(path: Path):
+    path = Path(path)
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"args.json at {path} is not valid JSON: {exc}") from exc
+
+
+def _check_restart_compatibility(previous_args: dict, run_args: dict, args_path: Path) -> None:
+    error_fields = ["run_kind", "pdb_sha256", "model", "temperature_kelvin", "salt_millimolar", "timestep_femtosecond"]
+    for field in error_fields:
+        if previous_args.get(field) != run_args.get(field):
+            raise ValueError(f"Restart compatibility check failed for {field} in {args_path}")
+
+    warning_fields = ["platform", "cranberry_version", "openmm_version"]
+    for field in warning_fields:
+        if previous_args.get(field) != run_args.get(field):
+            warnings.warn(
+                f"Restart metadata differs for {field}; continuing anyway.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
+
+def _next_args_history_path(history_dir: Path) -> Path:
+    history_dir = Path(history_dir)
+    index = 1
+    while True:
+        candidate = history_dir / f"{index:06d}_args.json"
+        if not candidate.exists():
+            return candidate
+        index += 1
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _present_force_group_names(system: mm.System) -> list[str]:
+    names_by_group = {system.getForce(i).getForceGroup(): system.getForce(i).getName() for i in range(system.getNumForces())}
+    return [name for name, group in FORCE_GROUP_IDS.items() if names_by_group.get(group) == name]
 
 
 def calculate_langevin_friction(topology: app.Topology, system: mm.System, temperature) -> unit.Quantity:
@@ -262,166 +367,3 @@ class DetailedEnergyReporter:
         except Exception:
             pass
 
-
-def _write_pdb_with_conect(path: Path, topology: app.Topology, positions) -> None:
-    buffer = io.StringIO()
-    app.PDBFile.writeFile(topology, positions, buffer, keepIds=True)
-    lines = buffer.getvalue().splitlines()
-    if lines and lines[-1].startswith("END"):
-        lines = lines[:-1]
-    for bond in topology.bonds():
-        lines.append(f"CONECT{_pdb_serial(bond.atom1):5d}{_pdb_serial(bond.atom2):5d}")
-    lines.append("END")
-    path.write_text("\n".join(lines) + "\n")
-
-
-def _pdb_serial(atom) -> int:
-    try:
-        serial = int(atom.id)
-    except (TypeError, ValueError):
-        return atom.index + 1
-    return serial if 0 < serial <= 99999 else atom.index + 1
-
-
-def _present_force_group_names(system: mm.System) -> list[str]:
-    names_by_group = {system.getForce(i).getForceGroup(): system.getForce(i).getName() for i in range(system.getNumForces())}
-    return [name for name, group in FORCE_GROUP_IDS.items() if group in names_by_group and names_by_group[group] == name]
-
-
-def _build_args(
-    *,
-    pdb_path,
-    model,
-    steps,
-    report_interval,
-    temperature,
-    salt_concentration,
-    timestep,
-    platform,
-    restart_from,
-    append_outputs,
-    dcd_append,
-    log_append,
-    detailed_append,
-    overwrite,
-) -> dict[str, object]:
-    temperature = _as_quantity(temperature, unit.kelvin)
-    salt_concentration = _as_quantity(salt_concentration, unit.millimolar)
-    timestep = _as_quantity(timestep, unit.femtosecond)
-    pdb_path = Path(pdb_path)
-    return {
-        "schema_version": 1,
-        "run_kind": "md",
-        "pdb_path": str(pdb_path),
-        "pdb_sha256": _sha256(pdb_path),
-        "model": default_model_name() if model == "default" else model,
-        "steps": steps,
-        "report_interval": report_interval,
-        "temperature_kelvin": temperature.value_in_unit(unit.kelvin),
-        "salt_millimolar": salt_concentration.value_in_unit(unit.millimolar),
-        "timestep_femtosecond": timestep.value_in_unit(unit.femtosecond),
-        "platform": platform,
-        "openmm_version": getattr(mm, "__version__", mm.version.version),
-        "cranberry_version": _cranberry_version(),
-        "restart_from": str(restart_from) if restart_from is not None else None,
-        "append_outputs": append_outputs,
-        "dcd_append": dcd_append,
-        "log_append": log_append,
-        "detailed_append": detailed_append,
-        "overwrite": overwrite,
-    }
-
-
-def _write_args(path: Path, args: dict[str, object]) -> None:
-    _archive_args_if_distinct(path, args)
-    path.write_text(json.dumps(args, indent=2, sort_keys=True) + "\n")
-
-
-def _archive_args_if_distinct(path: Path, args: dict[str, object]) -> Path | None:
-    if not path.exists():
-        return None
-    try:
-        existing = json.loads(path.read_text())
-    except json.JSONDecodeError:
-        archive_path = _next_args_history_path(path)
-        archive_path.write_text(path.read_text())
-        return archive_path
-    if _canonical_json(existing) == _canonical_json(args):
-        return None
-    archive_path = _next_args_history_path(path)
-    archive_path.write_text(json.dumps(existing, indent=2, sort_keys=True) + "\n")
-    return archive_path
-
-
-def _next_args_history_path(args_path: Path) -> Path:
-    history_dir = args_path.parent / "args_history"
-    history_dir.mkdir(parents=True, exist_ok=True)
-    index = 1
-    while True:
-        candidate = history_dir / f"{index:06d}_args.json"
-        if not candidate.exists():
-            return candidate
-        index += 1
-
-
-def _load_restart_args(args_path: Path) -> dict[str, object] | None:
-    if not args_path.exists():
-        warnings.warn(
-            f"Restart compatibility cannot be checked because {args_path} does not exist.",
-            RuntimeWarning,
-            stacklevel=3,
-        )
-        return None
-    try:
-        return json.loads(args_path.read_text())
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Cannot validate restart compatibility because {args_path} is not valid JSON") from exc
-
-
-def _check_restart_compatibility(previous: dict[str, object], current: dict[str, object], args_path: Path) -> None:
-    errors = []
-    for key in (
-        "run_kind",
-        "model",
-        "pdb_sha256",
-        "temperature_kelvin",
-        "salt_millimolar",
-        "timestep_femtosecond",
-    ):
-        if previous.get(key) != current.get(key):
-            errors.append(f"{key}: previous={previous.get(key)!r}, current={current.get(key)!r}")
-    if errors:
-        details = "\n".join(f"- {error}" for error in errors)
-        raise ValueError(f"Restart arguments are incompatible with {args_path}:\n{details}")
-    for key in ("platform", "openmm_version", "cranberry_version"):
-        if previous.get(key) != current.get(key):
-            warnings.warn(
-                f"Restart {key} differs from {args_path}: previous={previous.get(key)!r}, current={current.get(key)!r}",
-                RuntimeWarning,
-                stacklevel=3,
-            )
-
-
-def _canonical_json(value: object) -> str:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"))
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _cranberry_version() -> str:
-    try:
-        return version("cranberry-rna")
-    except PackageNotFoundError:  # pragma: no cover - editable source tree before install
-        return "0+unknown"
-
-
-def _as_quantity(value, target_unit):
-    if hasattr(value, "unit"):
-        return value.in_units_of(target_unit)
-    return value * target_unit

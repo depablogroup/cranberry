@@ -2,7 +2,9 @@
 
 This is the new `cranberry-rna` distribution. The Python import package is `cranberry`.
 
-Before changing package architecture, force-field behavior, CLI contracts, output formats, or tests, read `docs/dev/program.md` and `docs/dev/cranberry-v1-plan.md`.
+Before changing package architecture, force-field behavior, CLI contracts, output formats, or tests, read `docs/dev/program.md`, `docs/dev/roadmap.md`, and `docs/dev/cranberry-v1-plan.md`.
+
+At the start of a fresh Codex session in this repo, read `docs/dev/next-codex-handoff.md` before non-trivial work.
 
 Keep this file concise. Put long design notes, migration notes, release decisions, and detailed operating rules in `docs/dev/`.
 

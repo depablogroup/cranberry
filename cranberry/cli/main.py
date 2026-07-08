@@ -10,6 +10,7 @@ from openmm import unit
 
 from cranberry.energy import compute_energy
 from cranberry.md import run_md
+from cranberry.prepare import prepare_structure
 from cranberry.forcefield import (
     FORCE_GROUP_NAMES,
     available_models,
@@ -18,7 +19,19 @@ from cranberry.forcefield import (
 )
 from cranberry.validation import validate_canonical_pdb
 
-_COMMANDS = ("prepare", "cg", "remd")
+_COMMANDS = ("remd",)
+
+_NOOP_PREPARE_NOTE = (
+    "Nothing to do: the current Phase 4 prepare workflow only changes the file when "
+    "--add-terminal-phosphate is requested."
+)
+
+_TERMINAL_PHOSPHATE_NOTE = (
+    #"Note: many canonical CRANBERRY example inputs currently omit a 5'-terminal phosphate bead. "
+    #"Consider --add-terminal-phosphate only if you want Cranberry to model sugar-puckering context near a chain end, "
+    #"because the coarse-grained pucker estimate uses phosphate context."
+    ""
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -33,6 +46,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
+    _add_prepare_parser(subparsers, "prepare", "prepare a canonical CRANBERRY CG PDB")
+    _add_prepare_parser(subparsers, "cg", "canonicalize a coarse-grained CRANBERRY PDB")
     for command in _COMMANDS:
         subparser = subparsers.add_parser(
             command,
@@ -78,6 +93,46 @@ def build_parser() -> argparse.ArgumentParser:
     input_parser.set_defaults(func=_inspect_input)
 
     return parser
+
+
+def _add_prepare_parser(subparsers, command: str, help_text: str) -> None:
+    parser = subparsers.add_parser(command, help=help_text)
+    parser.add_argument("pdb", type=Path)
+    parser.add_argument("--output", type=Path, default=None, help="prepared output PDB path; used only with --add-terminal-phosphate")
+    parser.add_argument("--add-terminal-phosphate", action="store_true", help="insert a terminal phosphate at chain starts missing P")
+    parser.add_argument("--no-overwrite", action="store_true", help="fail if the output file already exists")
+    parser.set_defaults(func=_prepare, workflow=command)
+
+
+def _prepare(args: argparse.Namespace) -> int:
+    output_path = args.output or args.pdb.with_name(f"{args.pdb.stem}_{args.workflow}.pdb")
+    result = prepare_structure(
+        args.pdb,
+        output_path=output_path,
+        add_terminal_phosphate=args.add_terminal_phosphate,
+        overwrite=not args.no_overwrite,
+    )
+    print(f"input: {result.input_path}")
+    print(f"valid: {result.output_validation.valid}")
+
+    if not args.add_terminal_phosphate:
+        print(_NOOP_PREPARE_NOTE)
+        print(_TERMINAL_PHOSPHATE_NOTE)
+        if args.output is not None:
+            print(f"note: no output was written; ignored requested output path {args.output}")
+        for warning in result.output_validation.warnings:
+            print(f"warning: {warning}")
+        for error in result.output_validation.errors:
+            print(f"error: {error}")
+        return 0 if result.output_validation.valid else 1
+
+    print(f"output: {result.output_path}")
+    print(f"added terminal phosphates: {result.inserted_terminal_phosphates}")
+    for warning in result.output_validation.warnings:
+        print(f"warning: {warning}")
+    for error in result.output_validation.errors:
+        print(f"error: {error}")
+    return 0 if result.output_validation.valid else 1
 
 
 def _not_implemented(args: argparse.Namespace) -> int:

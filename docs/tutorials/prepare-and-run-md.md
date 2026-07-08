@@ -1,6 +1,12 @@
 # Prepare And Run MD
 
-`cranberry md` currently expects a canonical CRANBERRY coarse-grained PDB with virtual-site atoms and `CONECT` records. Use packaged examples or inspect your own input first:
+`cranberry prepare` and `cranberry cg` are the Phase 4 entry points for canonicalizing coarse-grained inputs. At the moment they operate on prepared CRANBERRY CG PDBs, not full atomistic structures. In the default path they validate the canonical CG file, report that nothing needs to be changed, and do not write a new file. When requested, they can add a missing 5'-terminal phosphate bead and the matching `P-S3` bond before writing the output PDB. This phosphate option is mainly for restoring end-local phosphate context when you want Cranberry's coarse-grained sugar-puckering estimate near a chain end. The example filename pattern `*_cg_vs_conect.pdb` means coarse-grained + virtual-site + CONECT records:
+
+```bash
+cranberry prepare cranberry/data/examples/2ntCG_cg_vs_conect.pdb --add-terminal-phosphate
+```
+
+`cranberry md` still expects a canonical CRANBERRY coarse-grained PDB with virtual-site atoms and `CONECT` records. Use packaged examples or inspect your own input first:
 
 ```bash
 cranberry inspect input cranberry/data/examples/2ntCG_cg_vs_conect.pdb

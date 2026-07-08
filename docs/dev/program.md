@@ -106,8 +106,12 @@ When benchmark work begins, define:
 - fixed metrics
 - hardware and platform metadata
 - machine-readable results
+- a publication target under `docs/benchmarks/`
+- a raw snapshot location under `benchmarks/results/`
 
-Do not commit noisy raw logs by default. Commit curated summaries, scripts, and reproducible instructions.
+The first benchmark slice should cover the four bundled canonical systems (`157d`, `1l2x`, `2ntCG`, `1zih`) with one baseline series at a time, then expand to CPU, CUDA, and later MPS variants before adding REMD. Keep the committed snapshot small and reproducible. Use a speed-vs-system-size plot and a per-system throughput table so the docs tab can show both the summary trend and the raw values.
+
+Do not commit noisy raw logs by default. Commit curated summaries, scripts, reproducible instructions, and the published benchmark snapshot files.
 
 ## Phase Success Criteria
 

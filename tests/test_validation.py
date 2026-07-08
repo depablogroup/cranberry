@@ -20,3 +20,10 @@ def test_invalid_input_reports_missing_file(tmp_path):
     result = validate_canonical_pdb(tmp_path / "missing.pdb")
     assert not result.valid
     assert result.errors == ("file does not exist",)
+
+
+
+def test_terminal_phosphate_warnings_are_reported():
+    result = validate_canonical_pdb(data_path("examples/2ntCG_cg_vs_conect.pdb"))
+    assert result.valid
+    assert any("missing terminal phosphate P" in warning for warning in result.warnings)

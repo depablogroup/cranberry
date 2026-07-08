@@ -9,6 +9,7 @@ The repository already has:
 - a clean installable package layout
 - the `cranberry` import package and `cranberry-rna` distribution identity
 - packaged canonical alpha model assets
+- cranberry prepare and cranberry cg for canonicalizing prepared CG inputs
 - `CranberryForceField` with an OpenMM-style API
 - CPU energy decomposition
 - a basic MD runner with restart handling and output bookkeeping
@@ -30,7 +31,7 @@ Done. This covered `cranberry md`, default outputs, checkpoint restart behavior,
 
 ### Phase 4: Preparation And Coarse-Graining
 
-Next. This should add the preparation workflow, canonical coarse-graining, and the option to add a 5'-terminal phosphate when needed.
+In progress. The first slice now adds cranberry prepare and cranberry cg canonicalization for prepared CG inputs and terminal phosphate insertion. The remaining work is fuller coarse-graining from upstream inputs and any polish needed before v1.
 
 ### Phase 5: REMD
 
@@ -43,6 +44,8 @@ After the core workflows are stable. Add optional JAX, training, and PySAGES/enh
 ### Phase 7: Hardening
 
 In parallel with the later phases. Finish developer-facing force-field construction notes, benchmark scaffolding, release discipline, and any documentation needed for a public v1.
+
+Benchmark hardening should include a published MD benchmark tab, one committed baseline snapshot from the local RTX 2060/CUDA workstation, and a path to compare later CPU, GPU, and MPS runs across clusters. The first plot should be speed versus system size for the bundled canonical systems; later snapshots can add REMD throughput and additional machine series.
 
 ### Phase 8: v1 Release
 

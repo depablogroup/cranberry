@@ -13,7 +13,7 @@ Implemented:
 - package import as `cranberry`
 - packaged model assets: XML plus `cranberry-v1-alpha.1.h5`
 - canonical input validation
-- `cranberry prepare` and `cranberry cg` canonicalization workflow
+- `cranberry prepare` and `cranberry cg` canonicalization workflow for already coarse-grained CRANBERRY PDBs
 - `CranberryForceField.createSystem()`
 - `cranberry energy` and `cranberry.energy.compute_energy()`
 - `cranberry md` and `cranberry.md.run_md()`
@@ -134,13 +134,15 @@ cranberry inspect forcefield
 cranberry inspect data
 ```
 
-Prepare a canonical coarse-grained input and add a terminal phosphate when needed:
+Prepare a canonical coarse-grained input. Today the default path is a validation-only check: if no terminal-phosphate insertion is requested, Cranberry reports that nothing needs to be changed and does not write a new file. Use `--add-terminal-phosphate` only when you want Cranberry to add missing 5'-terminal phosphate context near a chain end for sugar-puckering analysis in the coarse-grained model:
 
 ```bash
 cranberry prepare cranberry/data/examples/2ntCG_cg_vs_conect.pdb --add-terminal-phosphate
 ```
 
 Validate a canonical coarse-grained input PDB:
+
+The example filenames follow the pattern `*_cg_vs_conect.pdb`: `cg` means coarse-grained, `vs` means virtual sites, and `conect` means the PDB includes `CONECT` bond records.
 
 ```bash
 cranberry inspect input cranberry/data/examples/2ntCG_cg_vs_conect.pdb
@@ -236,6 +238,7 @@ Start here:
 - [CLI reference](https://github.com/yihengwuKP/cranberry/blob/main/docs/reference/cli.md)
 - [Outputs reference](https://github.com/yihengwuKP/cranberry/blob/main/docs/reference/outputs.md)
 - [Force-field reference](https://github.com/yihengwuKP/cranberry/blob/main/docs/reference/forcefield.md)
+- [Benchmarks](https://github.com/yihengwuKP/cranberry/blob/main/docs/benchmarks/index.md)
 
 Tutorials:
 
