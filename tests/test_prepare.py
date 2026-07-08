@@ -63,6 +63,19 @@ def test_prepare_structure_is_noop_without_terminal_phosphate(tmp_path):
     assert result.output_validation == result.input_validation
 
 
+def test_prepare_structure_noop_across_packaged_examples(tmp_path):
+    for name in [
+        "157d_cg_vs_conect.pdb",
+        "1l2x_cg_vs_conect.pdb",
+        "1zih_cg_vs_conect.pdb",
+        "2ntCG_cg_vs_conect.pdb",
+    ]:
+        result = prepare_structure(data_path(f"examples/{name}"), output_path=tmp_path / name)
+        assert result.output_path is None
+        assert result.output_validation.valid
+        assert result.inserted_terminal_phosphates == 0
+
+
 def test_prepare_structure_can_insert_terminal_phosphate(tmp_path):
     source_path = data_path("examples/2ntCG_cg_vs_conect.pdb")
     result = prepare_structure(

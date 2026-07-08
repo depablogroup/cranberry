@@ -27,10 +27,9 @@ _NOOP_PREPARE_NOTE = (
 )
 
 _TERMINAL_PHOSPHATE_NOTE = (
-    #"Note: many canonical CRANBERRY example inputs currently omit a 5'-terminal phosphate bead. "
-    #"Consider --add-terminal-phosphate only if you want Cranberry to model sugar-puckering context near a chain end, "
-    #"because the coarse-grained pucker estimate uses phosphate context."
-    ""
+    "Many canonical CRANBERRY examples currently omit a 5'-terminal phosphate bead. "
+    "Use --add-terminal-phosphate only if you want Cranberry to estimate sugar-puckering context near a chain end, "
+    "because the coarse-grained pucker model uses phosphate context."
 )
 
 
@@ -38,6 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="cranberry",
         description="CRANBERRY coarse-grained RNA simulation tools.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         "--version",
@@ -55,30 +55,30 @@ def build_parser() -> argparse.ArgumentParser:
         )
         subparser.set_defaults(func=_not_implemented)
 
-    md_parser = subparsers.add_parser("md", help="run CRANBERRY molecular dynamics")
+    md_parser = subparsers.add_parser("md", help="run CRANBERRY molecular dynamics", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     md_parser.add_argument("pdb", type=Path)
-    md_parser.add_argument("--steps", type=int, required=True, help="number of MD integration steps")
+    md_parser.add_argument("--steps", type=int, required=True, default=argparse.SUPPRESS, help="number of MD integration steps; required")
     md_parser.add_argument("--output-dir", type=Path, default=Path("."), help="directory for MD outputs; defaults to current directory")
-    md_parser.add_argument("--model", default="default")
+    md_parser.add_argument("--model", default="default", help="force-field model name; default resolves to cranberry-v1-alpha.1")
     md_parser.add_argument("--temperature", type=float, default=298.0, help="temperature in kelvin")
     md_parser.add_argument("--salt", type=float, default=150.0, help="salt concentration in millimolar")
-    md_parser.add_argument("--timestep", type=float, default=10.0, help="integration timestep in femtoseconds")
-    md_parser.add_argument("--report-interval", type=int, default=None, help="steps between output reports; defaults to min(steps, 1000)")
+    md_parser.add_argument("--timestep", type=float, default=5.0, help="integration timestep in femtoseconds")
+    md_parser.add_argument("--report-interval", type=int, default=argparse.SUPPRESS, help="steps between output reports; defaults to min(steps, 1000)")
     md_parser.add_argument("--platform", default="CPU", help="OpenMM platform name; use 'default' to let OpenMM choose")
     md_parser.add_argument("--restart-from", type=Path, default=None, help="OpenMM checkpoint to restart from")
     md_parser.add_argument("--no-overwrite", action="store_true", help="fail if default MD output files already exist")
     md_parser.set_defaults(func=_md)
 
-    energy_parser = subparsers.add_parser("energy", help="compute total and decomposed CRANBERRY energies")
+    energy_parser = subparsers.add_parser("energy", help="compute total and decomposed CRANBERRY energies", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     energy_parser.add_argument("pdb", type=Path)
-    energy_parser.add_argument("--model", default="default")
+    energy_parser.add_argument("--model", default="default", help="force-field model name; default resolves to cranberry-v1-alpha.1")
     energy_parser.add_argument("--temperature", type=float, default=298.0, help="temperature in kelvin")
     energy_parser.add_argument("--salt", type=float, default=150.0, help="salt concentration in millimolar")
     energy_parser.add_argument("--platform", default="CPU", help="OpenMM platform name; use 'default' to let OpenMM choose")
     energy_parser.add_argument("--json", action="store_true", help="write energies as JSON")
     energy_parser.set_defaults(func=_energy)
 
-    inspect_parser = subparsers.add_parser("inspect", help="inspect package data, models, or inputs")
+    inspect_parser = subparsers.add_parser("inspect", help="inspect package data, models, or inputs", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     inspect_subparsers = inspect_parser.add_subparsers(dest="inspect_command", metavar="TARGET")
     inspect_parser.set_defaults(func=_inspect_summary)
 
@@ -96,7 +96,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _add_prepare_parser(subparsers, command: str, help_text: str) -> None:
-    parser = subparsers.add_parser(command, help=help_text)
+    parser = subparsers.add_parser(command, help=help_text, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("pdb", type=Path)
     parser.add_argument("--output", type=Path, default=None, help="prepared output PDB path; used only with --add-terminal-phosphate")
     parser.add_argument("--add-terminal-phosphate", action="store_true", help="insert a terminal phosphate at chain starts missing P")
@@ -105,7 +105,9 @@ def _add_prepare_parser(subparsers, command: str, help_text: str) -> None:
 
 
 def _prepare(args: argparse.Namespace) -> int:
-    output_path = args.output or args.pdb.with_name(f"{args.pdb.stem}_{args.workflow}.pdb")
+    output_path = None
+    if args.add_terminal_phosphate:
+        output_path = args.output or args.pdb.with_name(f"{args.pdb.stem}_{args.workflow}.pdb")
     result = prepare_structure(
         args.pdb,
         output_path=output_path,
@@ -142,6 +144,20 @@ def _not_implemented(args: argparse.Namespace) -> int:
     )
 
 
+def _runtime_settings_line(args: argparse.Namespace, *, platform: str | None, report_interval: int | None = None) -> str:
+    model_spec = get_model_spec(args.model)
+    effective_platform = platform if platform is not None else "default"
+    return (
+        "settings: "
+        f"model={model_spec.name}, "
+        f"temperature={args.temperature:.1f} K, "
+        f"salt={args.salt:.1f} mM, "
+        f"timestep={args.timestep:.1f} fs, "
+        f"report_interval={report_interval if report_interval is not None else 'auto'}, "
+        f"platform={effective_platform}"
+    )
+
+
 def _md(args: argparse.Namespace) -> int:
     platform = None if args.platform == "default" else args.platform
     result = run_md(
@@ -157,6 +173,7 @@ def _md(args: argparse.Namespace) -> int:
         restart_from=args.restart_from,
         overwrite=not args.no_overwrite,
     )
+    print(_runtime_settings_line(args, platform=platform, report_interval=getattr(args, "report_interval", None)))
     print(f"output directory: {result.output_dir}")
     print(f"trajectory: {result.dcd_path}")
     print(f"log: {result.log_path}")
@@ -177,6 +194,7 @@ def _energy(args: argparse.Namespace) -> int:
         salt_concentration=args.salt * unit.millimolar,
         platform=platform,
     )
+    print(_runtime_settings_line(args, platform=platform, report_interval=getattr(args, "report_interval", None)))
     values = report.as_kj_per_mol()
     if args.json:
         print(json.dumps(values, indent=2, sort_keys=True))
