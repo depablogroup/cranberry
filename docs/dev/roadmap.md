@@ -31,11 +31,11 @@ Done. This covered `cranberry md`, default outputs, checkpoint restart behavior,
 
 ### Phase 4: Preparation And Coarse-Graining
 
-In progress. The first Phase 4 slice now adds cranberry cg coarse-graining from atomistic inputs plus cranberry prepare canonicalization for prepared CG inputs and terminal phosphate insertion. The remaining work is polish and any final documentation/testing needed before v1.
+Done. This phase added cranberry cg coarse-graining from atomistic inputs, cranberry prepare canonicalization for prepared CG inputs, terminal phosphate insertion support, real 1zih regression coverage, and the associated docs/reporting updates.
 
 ### Phase 5: REMD
 
-After Phase 4. Add `remd` as an optional feature, with `openmmtools` kept out of the base install.
+Next. Add `remd` as an optional feature, with `openmmtools` kept out of the base install.
 
 ### Phase 6: Advanced Extras
 

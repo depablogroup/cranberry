@@ -34,23 +34,24 @@ Read these files before changing anything non-trivial:
 - Phase 1 scaffold, CI, and contributor docs.
 - Phase 2 packaged model assets, validation, and energy decomposition.
 - Phase 3 MD runner, outputs, restart logic, and regression tests.
-- Phase 4 coarse-graining and canonicalization slice, plus terminal phosphate insertion support.
+- Phase 4 coarse-graining and canonicalization slice, plus terminal phosphate insertion support, is complete.
 - Developer reports for the main phase slices under docs/dev/progress/.
 - Code review reports should include the essential code path and algorithm snippets, not just high-level summaries.
 
 ## What Is Next
 
-The next major user-facing work is the rest of Phase 4:
+The next major user-facing work is Phase 5 REMD:
 
-- canonical CG input handling polish
-- documentation and test cleanup around cg/prepare boundaries
-- optional terminal phosphate insertion tuning
+- add `remd` as an optional feature
+- keep `openmmtools` out of the base install
+- define REMD success criteria, fixtures, and tests before implementation
 
 After that, the likely order is:
 
-- REMD as an optional extra
 - JAX, training, and PySAGES as optional extras
 - release hardening, benchmarks, and v1 finalization
+
+This handoff is intended for a fresh Codex session. Start by re-reading `AGENTS.md`, `docs/dev/program.md`, `docs/dev/cranberry-v1-plan.md`, and the latest report under `docs/dev/progress/`, then begin Phase 5 with a REMD design pass before coding.
 
 ## Practical Warnings
 
