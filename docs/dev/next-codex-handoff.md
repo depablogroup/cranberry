@@ -4,12 +4,14 @@ This note is for the next Codex session working in CRANBERRY/cranberry.
 
 ## Current State
 
-- The repo has two new uncommitted developer notes: docs/dev/roadmap.md and docs/dev/next-codex-handoff.md.
-- The latest committed change at handoff is 6238265 Add MD restart metadata checks.
+- Current HEAD is `bed1d0b` (`Close phase 4 handoff`).
+- Working tree should be clean apart from this handoff note when a new session starts.
+- Phase 4 code work is complete; no Phase 4 code changes are pending.
+- The next implementation phase is Phase 5 REMD.
 - The package is already scaffolded and installable as cranberry-rna.
-- The current public surface includes cranberry inspect, cranberry prepare, cranberry cg, cranberry energy, and cranberry md.
-- Phase 3 MD restart behavior has been implemented and documented.
-- Phase 4 now includes the coarse-graining entry point for atomistic inputs plus the canonicalization and terminal phosphate insertion slice.
+- The current public surface includes `cranberry inspect`, `cranberry prepare`, `cranberry cg`, `cranberry energy`, and `cranberry md`.
+- Phase 3 MD restart behavior is implemented and documented.
+- Phase 4 coarse-graining, canonicalization, terminal-phosphate support, and the real `1zih` regression are complete.
 
 ## What To Read First
 
@@ -42,16 +44,13 @@ Read these files before changing anything non-trivial:
 
 The next major user-facing work is Phase 5 REMD:
 
+- start with a REMD design pass before coding
 - add `remd` as an optional feature
 - keep `openmmtools` out of the base install
 - define REMD success criteria, fixtures, and tests before implementation
+- before coding, write the REMD design note and define the minimum fixtures, success criteria, and dependency boundary
 
-After that, the likely order is:
-
-- JAX, training, and PySAGES as optional extras
-- release hardening, benchmarks, and v1 finalization
-
-This handoff is intended for a fresh Codex session. Start by re-reading `AGENTS.md`, `docs/dev/program.md`, `docs/dev/cranberry-v1-plan.md`, and the latest report under `docs/dev/progress/`, then begin Phase 5 with a REMD design pass before coding.
+This handoff is for a fresh Codex session. Re-read `AGENTS.md`, `docs/dev/program.md`, `docs/dev/cranberry-v1-plan.md`, and the latest report under `docs/dev/progress/`, then start with the REMD design pass.
 
 ## Practical Warnings
 
