@@ -13,7 +13,7 @@ Implemented:
 - package import as `cranberry`
 - packaged model assets: XML plus `cranberry-v1-alpha.1.h5`
 - canonical input validation
-- `cranberry prepare` canonicalization workflow for already coarse-grained CRANBERRY PDBs, with `cranberry cg` as a short alias
+- `cranberry cg` coarse-graining workflow for atomistic RNA inputs, and `cranberry prepare` canonicalization workflow for already coarse-grained CRANBERRY PDBs
 - `CranberryForceField.createSystem()`
 - `cranberry energy` and `cranberry.energy.compute_energy()`
 - `cranberry md` and `cranberry.md.run_md()`
@@ -22,7 +22,8 @@ Implemented:
 
 Planned:
 
-- preparation/coarse-graining workflow
+- coarse-graining workflow from atomistic RNA inputs
+- preparation/canonicalization workflow for already coarse-grained inputs
 - optional 5'-phosphate insertion during preparation
 - REMD through optional `openmmtools` support
 - optional JAX/training/PySAGES workflows
@@ -134,7 +135,7 @@ cranberry inspect forcefield
 cranberry inspect data
 ```
 
-Prepare a canonical coarse-grained input. `cranberry prepare` is the primary command name, and `cranberry cg` is the short alias. Today the default path is a validation-only check: if no terminal-phosphate insertion is requested, Cranberry reports that nothing needs to be changed and does not write a new file. Use `--add-terminal-phosphate` only when you want Cranberry to add missing 5'-terminal phosphate context near a chain end for sugar-puckering analysis in the coarse-grained model:
+Prepare a canonical coarse-grained input. `cranberry cg` coarse-grains an atomistic RNA PDB into canonical CRANBERRY CG form, while `cranberry prepare` canonicalizes an already coarse-grained input. The default `prepare` path is a validation-only check: if no terminal-phosphate insertion is requested, Cranberry reports that nothing needs to be changed and does not write a new file. Use `--add-terminal-phosphate` only when you want Cranberry to add missing 5'-terminal phosphate context near a chain end for sugar-puckering analysis in the coarse-grained model:
 
 ```bash
 cranberry prepare cranberry/data/examples/2ntCG_cg_vs_conect.pdb --add-terminal-phosphate

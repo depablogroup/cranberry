@@ -9,7 +9,7 @@ The repository already has:
 - a clean installable package layout
 - the `cranberry` import package and `cranberry-rna` distribution identity
 - packaged canonical alpha model assets
-- cranberry prepare and cranberry cg for canonicalizing prepared CG inputs
+- cranberry cg for coarse-graining atomistic RNA inputs, and cranberry prepare for canonicalizing prepared CG inputs
 - `CranberryForceField` with an OpenMM-style API
 - CPU energy decomposition
 - a basic MD runner with restart handling and output bookkeeping
@@ -31,7 +31,7 @@ Done. This covered `cranberry md`, default outputs, checkpoint restart behavior,
 
 ### Phase 4: Preparation And Coarse-Graining
 
-In progress. The first slice now adds cranberry prepare and cranberry cg canonicalization for prepared CG inputs and terminal phosphate insertion. The remaining work is fuller coarse-graining from upstream inputs and any polish needed before v1.
+In progress. The first Phase 4 slice now adds cranberry cg coarse-graining from atomistic inputs plus cranberry prepare canonicalization for prepared CG inputs and terminal phosphate insertion. The remaining work is polish and any final documentation/testing needed before v1.
 
 ### Phase 5: REMD
 

@@ -9,7 +9,7 @@ This note is for the next Codex session working in CRANBERRY/cranberry.
 - The package is already scaffolded and installable as cranberry-rna.
 - The current public surface includes cranberry inspect, cranberry prepare, cranberry cg, cranberry energy, and cranberry md.
 - Phase 3 MD restart behavior has been implemented and documented.
-- Phase 4 has started with the first preparation and canonicalization slice, including terminal phosphate insertion support.
+- Phase 4 now includes the coarse-graining entry point for atomistic inputs plus the canonicalization and terminal phosphate insertion slice.
 
 ## What To Read First
 
@@ -34,15 +34,15 @@ Read these files before changing anything non-trivial:
 - Phase 1 scaffold, CI, and contributor docs.
 - Phase 2 packaged model assets, validation, and energy decomposition.
 - Phase 3 MD runner, outputs, restart logic, and regression tests.
-- Phase 4 preparation and canonicalization slice, plus terminal phosphate insertion support.
+- Phase 4 coarse-graining and canonicalization slice, plus terminal phosphate insertion support.
 - Developer reports for the main phase slices under docs/dev/progress/.
 
 ## What Is Next
 
 The next major user-facing work is the rest of Phase 4:
 
-- fuller coarse-graining workflow
 - canonical CG input handling polish
+- documentation and test cleanup around cg/prepare boundaries
 - optional terminal phosphate insertion tuning
 
 After that, the likely order is:

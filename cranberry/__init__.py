@@ -7,16 +7,19 @@ try:
 except PackageNotFoundError:  # pragma: no cover - editable source tree before install
     __version__ = "0+unknown"
 
+from cranberry.cg import CoarseGrainResult, coarse_grain_structure
 from cranberry.forcefield import CranberryForceField
 from cranberry.md import DetailedEnergyReporter, MDRunResult, calculate_langevin_friction, create_simulation, run_md
 from cranberry.prepare import PreparedStructureResult, prepare_structure
 
 __all__ = [
     "__version__",
+    "CoarseGrainResult",
     "CranberryForceField",
     "DetailedEnergyReporter",
     "MDRunResult",
     "calculate_langevin_friction",
+    "coarse_grain_structure",
     "create_simulation",
     "PreparedStructureResult",
     "prepare_structure",

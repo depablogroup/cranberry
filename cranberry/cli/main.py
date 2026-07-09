@@ -4,19 +4,20 @@ import argparse
 import json
 from pathlib import Path
 
-from cranberry import __version__
-from cranberry.data import available_forcefields
 from openmm import unit
 
+from cranberry import __version__
+from cranberry.data import available_forcefields
 from cranberry.energy import compute_energy
-from cranberry.md import run_md
-from cranberry.prepare import prepare_structure
 from cranberry.forcefield import (
     FORCE_GROUP_NAMES,
     available_models,
     default_model_name,
     get_model_spec,
 )
+from cranberry.md import run_md
+from cranberry.cg import coarse_grain_structure
+from cranberry.prepare import prepare_structure
 from cranberry.validation import validate_canonical_pdb
 
 _COMMANDS = ("remd",)
@@ -47,7 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
     _add_prepare_parser(subparsers, "prepare", "prepare a canonical CRANBERRY CG PDB")
-    _add_prepare_parser(subparsers, "cg", "short alias for prepare a canonical CRANBERRY CG PDB")
+    _add_cg_parser(subparsers, "cg", "coarse-grain an atomistic RNA PDB into canonical CRANBERRY CG form")
     for command in _COMMANDS:
         subparser = subparsers.add_parser(
             command,
@@ -104,6 +105,15 @@ def _add_prepare_parser(subparsers, command: str, help_text: str) -> None:
     parser.set_defaults(func=_prepare, workflow=command)
 
 
+def _add_cg_parser(subparsers, command: str, help_text: str) -> None:
+    parser = subparsers.add_parser(command, help=help_text, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("pdb", type=Path)
+    parser.add_argument("--output", type=Path, default=None, help="coarse-grained output PDB path; defaults to <input>_cg_vs_conect.pdb")
+    parser.add_argument("--add-terminal-phosphate", action="store_true", help="insert a terminal phosphate at chain starts missing P after coarse-graining")
+    parser.add_argument("--no-overwrite", action="store_true", help="fail if the output file already exists")
+    parser.set_defaults(func=_cg, workflow=command)
+
+
 def _prepare(args: argparse.Namespace) -> int:
     output_path = None
     if args.add_terminal_phosphate:
@@ -130,6 +140,40 @@ def _prepare(args: argparse.Namespace) -> int:
 
     print(f"output: {result.output_path}")
     print(f"added terminal phosphates: {result.inserted_terminal_phosphates}")
+    for warning in result.output_validation.warnings:
+        print(f"warning: {warning}")
+    for error in result.output_validation.errors:
+        print(f"error: {error}")
+    return 0 if result.output_validation.valid else 1
+
+
+def _cg(args: argparse.Namespace) -> int:
+    output_path = args.output or args.pdb.with_name(f"{args.pdb.stem}_{args.workflow}.pdb")
+    result = coarse_grain_structure(
+        args.pdb,
+        output_path=output_path,
+        overwrite=not args.no_overwrite,
+    )
+    print(f"input: {result.input_path}")
+    print(f"valid: {result.output_validation.valid}")
+    print(f"output: {result.output_path}")
+    print(f"coarse-grained residues: {result.residue_count}")
+    print(f"virtual-site atoms: {result.inserted_virtual_sites}")
+    if result.missing_terminal_phosphates:
+        print(f"missing terminal phosphates: {result.missing_terminal_phosphates}")
+    if args.add_terminal_phosphate:
+        result_after_phosphate = prepare_structure(
+            result.output_path,
+            output_path=result.output_path,
+            add_terminal_phosphate=True,
+            overwrite=True,
+        )
+        print(f"added terminal phosphates: {result_after_phosphate.inserted_terminal_phosphates}")
+        for warning in result_after_phosphate.output_validation.warnings:
+            print(f"warning: {warning}")
+        for error in result_after_phosphate.output_validation.errors:
+            print(f"error: {error}")
+        return 0 if result_after_phosphate.output_validation.valid else 1
     for warning in result.output_validation.warnings:
         print(f"warning: {warning}")
     for error in result.output_validation.errors:

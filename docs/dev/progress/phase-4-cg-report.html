@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CRANBERRY Phase 4 Coarse-Graining Review</title>
+  <style>
+    :root { --ink:#18222c; --muted:#5b6670; --line:#d9e0e7; --soft:#f5f7fa; --code:#0f1720; --ok:#137348; --warn:#9a5b00; }
+    body { margin:0; color:var(--ink); font:15px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:white; }
+    main { max-width:1120px; margin:0 auto; padding:36px 28px 72px; }
+    h1 { margin:0 0 10px; font-size:32px; line-height:1.15; }
+    h2 { margin:32px 0 12px; padding-top:22px; border-top:1px solid var(--line); font-size:22px; }
+    h3 { margin:20px 0 8px; font-size:17px; }
+    p { margin:0 0 12px; color:var(--muted); }
+    code, pre { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace; }
+    pre { margin:10px 0 0; padding:13px 15px; overflow:auto; color:#edf5ff; background:var(--code); border-radius:8px; font-size:13px; }
+    table { width:100%; border-collapse:collapse; margin:12px 0 0; font-size:14px; }
+    th, td { border-bottom:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+    th { background:var(--soft); }
+    ul { margin:8px 0 0 20px; padding:0; }
+    li { margin:5px 0; }
+    .card { border:1px solid var(--line); border-radius:8px; padding:15px; }
+    .ok { color:var(--ok); font-weight:700; }
+    .warn { color:var(--warn); font-weight:700; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>CRANBERRY Phase 4 Coarse-Graining Review</h1>
+  <p>This slice adds the upstream coarse-graining entry point for atomistic RNA inputs while preserving the existing prepare/no-op/terminal-phosphate workflow for already coarse-grained inputs.</p>
+
+  <h2>Review Finding</h2>
+  <div class="card">
+    <h3><span class="ok">No blocking issues found</span></h3>
+    <p>The new cg path is intentionally narrow: it converts a canonical atomistic RNA fragment into CRANBERRY CG beads, adds BC/BN virtual sites, writes CONECT records, and validates the output as a canonical input. The remaining risk is scope, not immediate correctness.</p>
+  </div>
+
+  <h2>What Changed</h2>
+  <ul>
+    <li>Added <code>cranberry.cg.coarse_grain_structure()</code> and <code>CoarseGrainResult</code>.</li>
+    <li>Changed <code>cranberry cg</code> from an alias into the upstream atomistic-to-CG command.</li>
+    <li>Kept <code>cranberry prepare</code> as the canonicalization/no-op/terminal-phosphate path for already prepared CG PDBs.</li>
+    <li>Updated the CLI, public docs, README, tests, and local pytest hook.</li>
+  </ul>
+
+  <h2>Important Files</h2>
+  <table>
+    <thead><tr><th>Path</th><th>Review Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>cranberry/cg.py</code></td><td>Builds canonical CG topology, emits BC/BN, and writes PDB + CONECT output.</td></tr>
+      <tr><td><code>cranberry/cli/main.py</code></td><td>Splits <code>cg</code> and <code>prepare</code> into distinct workflows.</td></tr>
+      <tr><td><code>tests/test_cg.py</code></td><td>Locks atomistic conversion and canonical validation.</td></tr>
+      <tr><td><code>tests/test_cli.py</code></td><td>Checks the CLI-level cg conversion path.</td></tr>
+      <tr><td><code>docs/reference/*.md</code>, <code>docs/tutorials/prepare-and-run-md.md</code></td><td>Document the cg/prepare split and the current contract.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Core Behavior</h2>
+  <h3>Coarse-Graining Workflow</h3>
+  <p><code>coarse_grain_structure()</code> reads an atomistic PDB through OpenMM, maps each canonical RNA residue to the CRANBERRY bead set, adds BC/BN virtual-site atoms, and writes canonical <code>CONECT</code> records through the shared PDB writer.</p>
+  <pre><code>result = coarse_grain_structure(
+    "atomistic_input.pdb",
+    output_path="atomistic_input_cg_vs_conect.pdb",
+)
+print(result.output_path)</code></pre>
+
+  <h3>Residue Mapping</h3>
+  <p>The converter keeps the CRANBERRY output names used by the force field:</p>
+  <ul>
+    <li>A: <code>P, S3, S2, R1, A1, A2, BC, BN</code></li>
+    <li>U: <code>P, S3, S2, Y1, U1, Y2, BC, BN</code></li>
+    <li>G: <code>P, S3, S2, R1, G1, G2, BC, BN</code></li>
+    <li>C: <code>P, S3, S2, Y1, C1, Y2, BC, BN</code></li>
+  </ul>
+  <p>The backbone and base beads are copied directly from the atomistic coordinates. BC is the average of the three base beads, and BN is an out-of-plane site built from the base-bead triangle with the same heuristic scale used in the legacy utilities.</p>
+
+  <h3>CLI Split</h3>
+  <pre><code>cranberry cg atomistic_input.pdb --output atomistic_input_cg_vs_conect.pdb
+cranberry prepare input_cg_vs_conect.pdb --add-terminal-phosphate</code></pre>
+  <p><code>cg</code> coarse-grains atomistic input, then can optionally run the terminal-phosphate repair on the produced CG file. <code>prepare</code> stays a validation-first normalization step for already prepared CG input.</p>
+
+  <h2>Validation</h2>
+  <table>
+    <thead><tr><th>Check</th><th>Status</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>conda run -n cranberry-dev python -m pytest -q tests/test_cg.py tests/test_cli.py::test_cli_cg_coarse_grains_atomistic_input tests/test_prepare.py</code></td><td class="ok">passed</td><td>The focused cg and prepare regressions passed.</td></tr>
+      <tr><td><code>conda run -n cranberry-dev python -m pytest -q</code></td><td class="warn">not rerun</td><td>The full suite was not rerun after this slice.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Residual Risk</h2>
+  <ul>
+    <li><span class="warn">Scope:</span> this is a canonical atomistic-to-CG converter, not a general-purpose RNA cleaning pipeline.</li>
+    <li><span class="warn">Heuristic geometry:</span> BC/BN placement remains a legacy-style heuristic, not a fitted physical model.</li>
+    <li><span class="warn">Documentation:</span> any downstream docs that still describe <code>cg</code> as an alias must be updated before release.</li>
+  </ul>
+
+  <h2>Next</h2>
+  <p>Keep the cg/prepare docs aligned, then run the broader package test slice and the docs build before the next commit.</p>
+</main>
+</body>
+</html>

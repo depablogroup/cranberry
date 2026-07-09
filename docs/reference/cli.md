@@ -7,10 +7,26 @@ cranberry inspect
 cranberry inspect data
 cranberry inspect forcefield [MODEL]
 cranberry inspect input PDB
-cranberry prepare PDB [--output OUT] [--add-terminal-phosphate]
 cranberry cg PDB [--output OUT] [--add-terminal-phosphate]
+cranberry prepare PDB [--output OUT] [--add-terminal-phosphate]
 cranberry energy PDB
 cranberry md PDB --steps STEPS
+```
+
+`cranberry cg` coarse-grains an atomistic RNA PDB into canonical CRANBERRY CG form. It emits a prepared `*_cg_vs_conect.pdb`-style output by default, with coarse-grained beads, BC/BN virtual sites, and `CONECT` records:
+
+```bash
+cranberry cg atomistic_input.pdb --output atomistic_input_cg_vs_conect.pdb
+```
+
+`cranberry prepare` is the canonicalization step for an already coarse-grained CRANBERRY PDB. By default it validates the canonical CG file, reports that nothing needs to be changed, and does not write a new file. Use `--add-terminal-phosphate` only when you want Cranberry to add missing 5'-terminal phosphate context near a chain end for sugar-puckering analysis in the coarse-grained model.
+
+Common `cg` and `prepare` options:
+
+```text
+--output PATH              output PDB path; default depends on the command
+--add-terminal-phosphate   insert a terminal phosphate at chain starts missing P
+--no-overwrite             fail if the output file already exists
 ```
 
 Run a short CPU MD simulation from a canonical coarse-grained PDB:
@@ -25,16 +41,6 @@ Restart from a previous MD checkpoint. Restart appends to `output.dcd`, `log`, a
 
 ```bash
 cranberry md input_cg_vs_conect.pdb --steps 1000 --restart-from md-out/checkpoint.chk --output-dir md-out --platform CPU
-```
-
-`cranberry prepare` is the primary command name, and `cranberry cg` is its short alias. They currently operate on already coarse-grained CRANBERRY inputs rather than full atomistic structures. By default they validate the canonical CG PDB, print that nothing needs to be changed, and do not write a new file. When `--add-terminal-phosphate` is enabled, Cranberry rewrites the PDB to insert a `P` bead at each chain start missing one and adds the corresponding `P-S3` `CONECT` bond. This is mainly useful when you want phosphate context near a chain end for the coarse-grained sugar-puckering estimate.
-
-Common `prepare` options:
-
-```text
---output PATH              output PDB path, used only with --add-terminal-phosphate
---add-terminal-phosphate   insert a terminal phosphate at chain starts missing P
---no-overwrite             fail if the output file already exists
 ```
 
 Common `md` options:

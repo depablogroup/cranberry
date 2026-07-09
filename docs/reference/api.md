@@ -18,7 +18,19 @@ system = forcefield.createSystem(
 
 `CranberryForceField.createSystem()` constructs an OpenMM `System`.
 
-For preparation and normalization of a canonical coarse-grained input:
+For coarse-graining atomistic RNA input into canonical CRANBERRY form:
+
+```python
+from cranberry.cg import coarse_grain_structure
+
+result = coarse_grain_structure(
+    "atomistic_input.pdb",
+    output_path="atomistic_input_cg_vs_conect.pdb",
+)
+print(result.output_path)
+```
+
+For preparation and normalization of an already coarse-grained input:
 
 ```python
 from cranberry.prepare import prepare_structure
@@ -80,6 +92,6 @@ simulation = create_simulation("input_cg_vs_conect.pdb", platform="CPU")
 simulation.step(1000)
 ```
 
-`prepare_structure` currently targets already coarse-grained CRANBERRY PDBs. It is the API behind `cranberry prepare`, with `cranberry cg` as a short alias. Without terminal-phosphate insertion it performs validation only and returns without writing a new file. With terminal-phosphate insertion it rewrites the PDB, adds a `P` bead at each chain start that is missing one, adds the corresponding `P-S3` bond, and writes canonical `CONECT` records. This option is mainly for restoring phosphate context near a chain end when that context matters to the coarse-grained sugar-puckering estimate.
+`prepare_structure` currently targets already coarse-grained CRANBERRY PDBs. It is the API behind `cranberry prepare`, with `cranberry cg` as the upstream coarse-graining command. Without terminal-phosphate insertion it performs validation only and returns without writing a new file. With terminal-phosphate insertion it rewrites the PDB, adds a `P` bead at each chain start that is missing one, adds the corresponding `P-S3` bond, and writes canonical `CONECT` records. This option is mainly for restoring phosphate context near a chain end when that context matters to the coarse-grained sugar-puckering estimate.
 
 `run_md` and `create_simulation` pass one temperature to both force-field construction and the Langevin integrator, so electrostatics and dynamics stay consistent.
