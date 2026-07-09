@@ -1,33 +1,5 @@
-from pathlib import Path
-
 from cranberry.cli.main import main
 from cranberry.data import data_path
-
-
-def _atom_line(serial, atom_name, residue_name, chain_id, residue_id, x, y, z, element):
-    return (
-        f"ATOM  {serial:5d} {atom_name:>4s} {residue_name:>3s} {chain_id}{residue_id:4d}"
-        f"    {x:8.3f}{y:8.3f}{z:8.3f}{1.00:6.2f}{0.00:6.2f}          {element:>2s}"
-    )
-
-
-def _write_atomistic_fragment(path: Path) -> None:
-    lines = [
-        _atom_line(1, "P", "A", "A", 1, -2.0, 0.0, 0.0, "P"),
-        _atom_line(2, "C3'", "A", "A", 1, -1.0, 0.0, 0.0, "C"),
-        _atom_line(3, "C2'", "A", "A", 1, -1.0, 0.2, 0.0, "C"),
-        _atom_line(4, "C8", "A", "A", 1, 0.0, 0.0, 0.0, "C"),
-        _atom_line(5, "N6", "A", "A", 1, 0.0, 0.1, 0.1, "N"),
-        _atom_line(6, "C2", "A", "A", 1, 0.0, 0.2, 0.0, "C"),
-        _atom_line(7, "P", "G", "A", 2, 2.0, 0.0, 0.0, "P"),
-        _atom_line(8, "C3'", "G", "A", 2, 3.0, 0.0, 0.0, "C"),
-        _atom_line(9, "C2'", "G", "A", 2, 3.0, 0.2, 0.0, "C"),
-        _atom_line(10, "C8", "G", "A", 2, 4.0, 0.0, 0.0, "C"),
-        _atom_line(11, "O6", "G", "A", 2, 4.0, 0.1, 0.1, "O"),
-        _atom_line(12, "N2", "G", "A", 2, 4.0, 0.2, 0.0, "N"),
-        "END",
-    ]
-    path.write_text("\n".join(lines) + "\n")
 
 
 def test_cli_help(capsys):
@@ -123,12 +95,11 @@ def test_cli_prepare_inserts_terminal_phosphate(tmp_path, capsys):
     assert output.exists()
 
 
-def test_cli_cg_coarse_grains_atomistic_input(tmp_path, capsys):
-    source = tmp_path / "input.pdb"
-    _write_atomistic_fragment(source)
-    output = tmp_path / "cg.pdb"
+def test_cli_cg_coarse_grains_real_1zih(tmp_path, capsys):
+    source = data_path("examples/aa/1zih/1zih.pdb")
+    output = tmp_path / "1zih_cg_vs_conect.pdb"
     assert main(["cg", str(source), "--output", str(output)]) == 0
     captured = capsys.readouterr()
-    assert "coarse-grained residues: 2" in captured.out
-    assert "virtual-site atoms: 4" in captured.out
+    assert "coarse-grained residues: 12" in captured.out
+    assert "virtual-site atoms: 24" in captured.out
     assert output.exists()

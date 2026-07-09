@@ -36,6 +36,7 @@ Read these files before changing anything non-trivial:
 - Phase 3 MD runner, outputs, restart logic, and regression tests.
 - Phase 4 coarse-graining and canonicalization slice, plus terminal phosphate insertion support.
 - Developer reports for the main phase slices under docs/dev/progress/.
+- Code review reports should include the essential code path and algorithm snippets, not just high-level summaries.
 
 ## What Is Next
 

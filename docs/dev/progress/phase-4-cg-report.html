@@ -40,7 +40,7 @@
     <li>Added <code>cranberry.cg.coarse_grain_structure()</code> and <code>CoarseGrainResult</code>.</li>
     <li>Changed <code>cranberry cg</code> from an alias into the upstream atomistic-to-CG command.</li>
     <li>Kept <code>cranberry prepare</code> as the canonicalization/no-op/terminal-phosphate path for already prepared CG PDBs.</li>
-    <li>Updated the CLI, public docs, README, tests, and local pytest hook.</li>
+    <li>Updated the CLI, public docs, README, tests, local pytest hook, and the checked-in 1zih atomistic fixture.</li>
   </ul>
 
   <h2>Important Files</h2>
@@ -49,20 +49,46 @@
     <tbody>
       <tr><td><code>cranberry/cg.py</code></td><td>Builds canonical CG topology, emits BC/BN, and writes PDB + CONECT output.</td></tr>
       <tr><td><code>cranberry/cli/main.py</code></td><td>Splits <code>cg</code> and <code>prepare</code> into distinct workflows.</td></tr>
-      <tr><td><code>tests/test_cg.py</code></td><td>Locks atomistic conversion and canonical validation.</td></tr>
-      <tr><td><code>tests/test_cli.py</code></td><td>Checks the CLI-level cg conversion path.</td></tr>
+      <tr><td><code>tests/test_cg.py</code></td><td>Locks atomistic conversion against the packaged 1zih reference.</td></tr>
+      <tr><td><code>tests/test_cli.py</code></td><td>Checks the CLI-level cg conversion path with the real 1zih fixture.</td></tr>
+      <tr><td><code>cranberry/data/examples/aa/1zih/README.md</code></td><td>Records the provenance and generation command for the atomistic fixture.</td></tr>
       <tr><td><code>docs/reference/*.md</code>, <code>docs/tutorials/prepare-and-run-md.md</code></td><td>Document the cg/prepare split and the current contract.</td></tr>
     </tbody>
   </table>
 
   <h2>Core Behavior</h2>
-  <h3>Coarse-Graining Workflow</h3>
-  <p><code>coarse_grain_structure()</code> reads an atomistic PDB through OpenMM, maps each canonical RNA residue to the CRANBERRY bead set, adds BC/BN virtual-site atoms, and writes canonical <code>CONECT</code> records through the shared PDB writer.</p>
-  <pre><code>result = coarse_grain_structure(
-    "atomistic_input.pdb",
-    output_path="atomistic_input_cg_vs_conect.pdb",
-)
-print(result.output_path)</code></pre>
+  <h3>Implementation Path</h3>
+  <p>The cg command does not use Biopandas. It uses OpenMM's PDB parser because the workflow only needs the topology, residue names, atom coordinates, and bond graph. That keeps the implementation aligned with the rest of the package and avoids a second dependency for simple PDB ingestion.</p>
+  <pre><code>from openmm import app, unit
+
+from cranberry.pdbio import write_pdb_with_conect
+from cranberry.validation import validate_canonical_pdb
+
+
+def coarse_grain_structure(pdb_path, *, output_path=None, overwrite=True):
+    pdb = app.PDBFile(str(pdb_path))
+    topology, positions, residue_count, inserted_virtual_sites, missing_terminal_phosphates = _build_cg_topology(
+        pdb.topology,
+        pdb.positions,
+    )
+    write_pdb_with_conect(output_path, topology, positions)
+    output_validation = validate_canonical_pdb(output_path)
+    output_validation.raise_for_errors()
+    return CoarseGrainResult(...)</code></pre>
+
+  <h3>Core Algorithm</h3>
+  <p>The converter walks each chain and residue, maps canonical residue names (<code>rA/rU/rG/rC</code>) to the CRANBERRY bead order, copies backbone and base bead coordinates from the atomistic structure, and then synthesizes the virtual sites. BC is the center of geometry of the three base beads. BN is a heuristic out-of-plane site built from the base triangle with a fixed cross-product scale.</p>
+  <pre><code>for atom_name in _OUTPUT_ATOM_ORDER[residue_name]:
+    if atom_name == "P":
+        ... copy phosphate if present ...
+    elif atom_name == "BC":
+        position = _virtual_site_cog(new_positions_by_name, residue_name)
+    elif atom_name == "BN":
+        position = _virtual_site_normal(new_positions_by_name, residue_name)
+    else:
+        source_atom_name = _SOURCE_ATOMS[residue_name][atom_name]
+        position = source_positions[source_atom.index]</code></pre>
+  <p>After atom placement, the code writes the expected bead bonds, including the backbone link between adjacent residues and the BC/BN connectivity, then validates the output as a canonical prepared PDB.</p>
 
   <h3>Residue Mapping</h3>
   <p>The converter keeps the CRANBERRY output names used by the force field:</p>
@@ -83,7 +109,7 @@ cranberry prepare input_cg_vs_conect.pdb --add-terminal-phosphate</code></pre>
   <table>
     <thead><tr><th>Check</th><th>Status</th><th>Notes</th></tr></thead>
     <tbody>
-      <tr><td><code>conda run -n cranberry-dev python -m pytest -q tests/test_cg.py tests/test_cli.py::test_cli_cg_coarse_grains_atomistic_input tests/test_prepare.py</code></td><td class="ok">passed</td><td>The focused cg and prepare regressions passed.</td></tr>
+      <tr><td><code>conda run -n cranberry-dev python -m pytest -q tests/test_cg.py tests/test_cli.py::test_cli_cg_coarse_grains_real_1zih tests/test_prepare.py</code></td><td class="ok">passed</td><td>The focused cg and prepare regressions passed.</td></tr>
       <tr><td><code>conda run -n cranberry-dev python -m pytest -q</code></td><td class="warn">not rerun</td><td>The full suite was not rerun after this slice.</td></tr>
     </tbody>
   </table>

@@ -91,7 +91,9 @@ The report should include:
 - tests and docs checks
 - known risks and follow-up work
 
-For substantial implementation changes, the report should show the essential code, not only describe it. Include short snippets for the public API, the main control flow, scientific/model assumptions, representative tests, and any risky or non-obvious implementation choices. Keep snippets focused enough to review quickly, and use prose to explain why each snippet matters.
+For substantial implementation changes, the report should show the essential code, not only describe it. Include short snippets for the public API, the main control flow, the core algorithm, scientific/model assumptions, representative tests, and any risky or non-obvious implementation choices. Explain what each snippet does and why it matters, especially when a new workflow replaces a dependency or introduces a heuristic. Keep snippets focused enough to review quickly.
+
+When a change removes an external dependency or swaps implementation strategy, the report must name the replacement approach and show the key code path, not just the end result.
 
 The report is a developer artifact and should remain excluded from the public Sphinx build unless the user decides otherwise.
 
