@@ -37,6 +37,7 @@ def test_cli_inspect_summary(capsys):
     assert "cranberry-v1-alpha.1" in captured.out
 
 
+@pytest.mark.remd
 def test_cli_remd_extract_by_replica(tmp_path, capsys):
     path = data_path("examples/2ntCG_cg_vs_conect.pdb")
     result = run_remd(
@@ -59,6 +60,7 @@ def test_cli_remd_extract_by_replica(tmp_path, capsys):
 
 
 
+@pytest.mark.remd
 def test_cli_remd_extract_by_temperature(tmp_path, capsys):
     path = data_path("examples/2ntCG_cg_vs_conect.pdb")
     result = run_remd(

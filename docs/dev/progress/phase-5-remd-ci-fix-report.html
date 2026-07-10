@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Phase 5 REMD CI Fix Report</title></head>
+<body>
+<h1>Phase 5 REMD CI Fix Report</h1>
+<p>Most recent commit <code>e635763</code> added REMD tests while the base CI job installed only <code>.[dev]</code>. Because <code>openmmtools</code> is intentionally isolated behind the optional <code>remd</code> extra, GitHub CI needs to install the REMD extra when it is expected to exercise the REMD branch.</p>
+<h2>Fix</h2>
+<ul>
+<li>Changed the GitHub Actions install step to use <code>python -m pip install -e ".[dev,remd]"</code>, so CI installs <code>openmmtools</code> and runs the REMD integration tests.</li>
+<li>Removed the local pytest auto-skip hook from the prior attempted fix; REMD-marked tests should execute in GitHub CI rather than being skipped there.</li>
+<li>Kept the REMD marker on CLI extraction tests because they create real REMD NetCDF files via <code>run_remd</code>.</li>
+</ul>
+<h2>Risk</h2>
+<p>Moderate. CI now depends on optional REMD dependencies resolving successfully, but this matches the desired branch validation behavior.</p>
+<h2>Validation</h2>
+<ul>
+<li><code>python -m pytest tests/test_cli.py::test_cli_help tests/test_cli.py::test_cli_remd_help -q</code></li>
+<li><code>python -m pytest -q</code> is expected to fail locally without <code>openmmtools</code>; GitHub CI should install it through <code>.[dev,remd]</code>.</li>
+</ul>
+</body>
+</html>
