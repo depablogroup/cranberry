@@ -36,7 +36,7 @@ Restart from the checkpoint. Restart appends to `output.dcd`, `log`, and `detail
 cranberry md cranberry/data/examples/2ntCG_cg_vs_conect.pdb   --steps 1000   --restart-from md-out/checkpoint.chk   --output-dir md-out   --platform CPU
 ```
 
-`log` is the standard OpenMM state log. `detailed.log` adds force-group decomposition columns, including total potential energy and named CRANBERRY components such as `bond`, `pucker`, `stacking35`, `pairing`, `spline`, and `electrostatic`. `final.pdb` includes `CONECT` records so it can be inspected as a canonical Cranberry PDB.
+`checkpoint.chk` is refreshed at each report interval during the run and again when the run completes. `log` is the standard OpenMM state log. `detailed.log` adds force-group decomposition columns, including total potential energy and named CRANBERRY components such as `bond`, `pucker`, `stacking35`, `pairing`, `spline`, and `electrostatic`. `final.pdb` includes `CONECT` records so it can be inspected as a canonical Cranberry PDB.
 
 `args.json` is the latest run metadata. If a later run changes any metadata, Cranberry archives the previous file in `args_history/`. During restart, Cranberry errors on model, PDB hash, temperature, salt, timestep, or run-kind mismatches; platform and version differences are warnings.
 

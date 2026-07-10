@@ -38,7 +38,7 @@ For GPU validation, reuse the same command shape with an explicit platform such 
 cranberry energy cranberry/data/examples/2ntCG_cg_vs_conect.pdb --platform CUDA
 ```
 
-Restart from the generated checkpoint:
+Restart from the generated checkpoint. The checkpoint is refreshed at the report interval during the run, so an interrupted long job can usually restart from the latest completed report interval:
 
 ```bash
 cranberry md cranberry/data/examples/2ntCG_cg_vs_conect.pdb --steps 10 --restart-from md-out/checkpoint.chk --output-dir md-out --platform CPU

@@ -200,6 +200,7 @@ def run_md(
         )
     )
     simulation.reporters.append(DetailedEnergyReporter(result.detailed_log_path, report_interval, append=detailed_append))
+    simulation.reporters.append(app.CheckpointReporter(str(result.checkpoint_path), report_interval))
 
     _write_args(result.args_path, run_args)
     simulation.step(steps)
