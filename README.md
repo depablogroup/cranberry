@@ -25,7 +25,7 @@ Planned:
 - coarse-graining workflow from atomistic RNA inputs
 - preparation/canonicalization workflow for already coarse-grained inputs
 - optional 5'-phosphate insertion during preparation
-- REMD through optional `openmmtools` support
+- REMD through optional `openmmtools` support, with NetCDF restart and OpenMM-native DCD translation; no MDAnalysis dependency in the public release
 - optional JAX/training/PySAGES workflows
 
 ## Fresh Setup
@@ -160,7 +160,7 @@ Run a short CPU MD simulation:
 ```bash
 cranberry md cranberry/data/examples/2ntCG_cg_vs_conect.pdb \
   --steps 1000 \
-  --report-interval 100 \
+  --n-record 10 \
   --output-dir md-out \
   --platform CPU
 ```

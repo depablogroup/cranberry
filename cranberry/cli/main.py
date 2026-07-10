@@ -2,25 +2,28 @@ from __future__ import annotations
 
 import argparse
 import json
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from openmm import unit
 
-from cranberry import __version__
-from cranberry.data import available_forcefields
-from cranberry.energy import compute_energy
-from cranberry.forcefield import (
+try:
+    __version__ = version("cranberry-rna")
+except PackageNotFoundError:  # pragma: no cover - editable source tree before install
+    __version__ = "0+unknown"
+from ..data import available_forcefields
+from ..energy import compute_energy
+from ..forcefield import (
     FORCE_GROUP_NAMES,
     available_models,
     default_model_name,
     get_model_spec,
 )
-from cranberry.md import run_md
-from cranberry.cg import coarse_grain_structure
-from cranberry.prepare import prepare_structure
-from cranberry.validation import validate_canonical_pdb
-
-_COMMANDS = ("remd",)
+from ..md import run_md
+from ..cg import coarse_grain_structure
+from ..prepare import prepare_structure
+from ..remd import RemdRunConfig, TemperatureLadderSpec, _add_dcd_mode_options, build_remd_parser, run_remd, translate_netcdf_to_dcd
+from ..validation import validate_canonical_pdb
 
 _NOOP_PREPARE_NOTE = (
     "Nothing to do: the current Phase 4 prepare workflow only changes the file when "
@@ -49,12 +52,14 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
     _add_prepare_parser(subparsers, "prepare", "prepare a canonical CRANBERRY CG PDB")
     _add_cg_parser(subparsers, "cg", "coarse-grain an atomistic RNA PDB into canonical CRANBERRY CG form")
-    for command in _COMMANDS:
-        subparser = subparsers.add_parser(
-            command,
-            help=f"{command} workflow (not implemented yet)",
-        )
-        subparser.set_defaults(func=_not_implemented)
+    build_remd_parser(subparsers, default_func=_remd)
+    remd_extract_parser = subparsers.add_parser("remd-extract", help="translate REMD NetCDF output to DCD files", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    remd_extract_parser.add_argument("netcdf", type=Path, help="REMD NetCDF storage to translate")
+    remd_extract_parser.add_argument("pdb", type=Path, help="canonical coarse-grained CRANBERRY PDB used to generate the NetCDF")
+    remd_extract_parser.add_argument("--output-dir", type=Path, default=Path('.'), help="directory for extracted DCD files")
+    _add_dcd_mode_options(remd_extract_parser)
+    remd_extract_parser.add_argument("--overwrite", action="store_true", help="allow overwriting existing DCD files")
+    remd_extract_parser.set_defaults(func=_remd_extract)
 
     md_parser = subparsers.add_parser("md", help="run CRANBERRY molecular dynamics", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     md_parser.add_argument("pdb", type=Path)
@@ -64,7 +69,8 @@ def build_parser() -> argparse.ArgumentParser:
     md_parser.add_argument("--temperature", type=float, default=298.0, help="temperature in kelvin")
     md_parser.add_argument("--salt", type=float, default=150.0, help="salt concentration in millimolar")
     md_parser.add_argument("--timestep", type=float, default=5.0, help="integration timestep in femtoseconds")
-    md_parser.add_argument("--report-interval", type=int, default=argparse.SUPPRESS, help="steps between output reports; defaults to min(steps, 1000)")
+    md_parser.add_argument("--n-record", type=int, default=1000, help="target number of trajectory/log records; report interval is derived as max(1, steps // n_record)")
+    md_parser.add_argument("--write-minimization-report", action="store_true", help="write pre/post minimization energies to minimization_report.json")
     md_parser.add_argument("--platform", default="CPU", help="OpenMM platform name; use 'default' to let OpenMM choose")
     md_parser.add_argument("--restart-from", type=Path, default=None, help="OpenMM checkpoint to restart from")
     md_parser.add_argument("--no-overwrite", action="store_true", help="fail if default MD output files already exist")
@@ -188,7 +194,71 @@ def _not_implemented(args: argparse.Namespace) -> int:
     )
 
 
-def _runtime_settings_line(args: argparse.Namespace, *, platform: str | None, report_interval: int | None = None) -> str:
+def _remd(args: argparse.Namespace) -> int:
+    platform = None if args.platform == "default" else args.platform
+    temperatures = getattr(args, "temperature_ladder", None)
+    ladder = TemperatureLadderSpec(
+        temperatures=tuple(temperatures) if temperatures is not None else None,
+        t_min=args.t_min,
+        t_max=args.t_max,
+        n_replicas=args.n_replicas,
+    )
+    result = run_remd(
+        RemdRunConfig(
+            pdb_path=args.pdb,
+            steps=args.steps,
+            output_dir=args.output_dir,
+            model=args.model,
+            temperature_ladder=ladder,
+            swap_steps=args.swap_steps,
+            n_record=args.n_record,
+            n_analysis=args.n_analysis,
+            salt_concentration_millimolar=args.salt,
+            timestep_femtosecond=args.timestep,
+            platform=platform,
+            restart_from=args.restart_from,
+            extra_start_pdb=args.extra_start_pdb,
+            overwrite=args.overwrite,
+            write_dcd=args.write_dcd,
+            dcd_mode=args.dcd_mode,
+        )
+    )
+    print(
+        "settings: "
+        f"model={args.model}, "
+        f"replicas={len(result.temperatures_kelvin)}, "
+        f"steps={result.steps}, "
+        f"iterations={result.iterations}, "
+        f"swap_steps={result.swap_steps}, "
+        f"checkpoint_interval={result.checkpoint_interval}, "
+        f"platform={platform if platform is not None else 'default'}"
+    )
+    print(f"output directory: {result.output_dir}")
+    print(f"netcdf: {result.output_netcdf_path}")
+    print(f"args: {result.args_path}")
+    if result.online_analysis_interval is not None:
+        print(f"online analysis interval: {result.online_analysis_interval}")
+    if result.output_dcd_path is not None:
+        print(f"trajectory: {result.output_dcd_path}")
+    if result.restart_from_path is not None:
+        print(f"restarted from: {result.restart_from_path}")
+    return 0
+
+
+def _remd_extract(args: argparse.Namespace) -> int:
+    output = translate_netcdf_to_dcd(
+        args.netcdf,
+        pdb_path=args.pdb,
+        output_dir=args.output_dir,
+        output_mode=args.dcd_mode,
+        overwrite=args.overwrite,
+    )
+    print(f"output: {output}")
+    return 0
+
+
+def _runtime_settings_line(
+args: argparse.Namespace, *, platform: str | None, report_interval: int | None = None) -> str:
     model_spec = get_model_spec(args.model)
     effective_platform = platform if platform is not None else "default"
     return (
@@ -198,6 +268,7 @@ def _runtime_settings_line(args: argparse.Namespace, *, platform: str | None, re
         f"salt={args.salt:.1f} mM, "
         f"timestep={args.timestep:.1f} fs, "
         f"report_interval={report_interval if report_interval is not None else 'auto'}, "
+        f"n_record={getattr(args, 'n_record', 'auto')}, "
         f"platform={effective_platform}"
     )
 
@@ -212,16 +283,20 @@ def _md(args: argparse.Namespace) -> int:
         temperature=args.temperature * unit.kelvin,
         salt_concentration=args.salt * unit.millimolar,
         timestep=args.timestep * unit.femtosecond,
-        report_interval=args.report_interval,
+        report_interval=getattr(args, "report_interval", None),
+        n_record=args.n_record,
         platform=platform,
         restart_from=args.restart_from,
         overwrite=not args.no_overwrite,
+        write_minimization_report=args.write_minimization_report,
     )
-    print(_runtime_settings_line(args, platform=platform, report_interval=getattr(args, "report_interval", None)))
+    print(_runtime_settings_line(args, platform=platform, report_interval=result.report_interval))
     print(f"output directory: {result.output_dir}")
     print(f"trajectory: {result.dcd_path}")
     print(f"log: {result.log_path}")
     print(f"detailed log: {result.detailed_log_path}")
+    if result.minimization_report_path is not None:
+        print(f"minimization report: {result.minimization_report_path}")
     if result.restart_from_path is not None:
         print(f"restarted from: {result.restart_from_path}")
     print(f"checkpoint: {result.checkpoint_path}")

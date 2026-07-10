@@ -31,7 +31,7 @@ Default REMD outputs:
 Overwrite policy:
 
 - `cranberry md` follows OpenMM-style overwrite behavior.
-- `cranberry remd` follows OpenMMTools-style no-overwrite behavior.
+- `cranberry remd` follows OpenMMTools-style no-overwrite behavior by default; `--overwrite` should be an explicit opt-in.
 
 ## Consequences
 

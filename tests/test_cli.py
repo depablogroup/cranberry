@@ -1,5 +1,7 @@
+import pytest
 from cranberry.cli.main import main
 from cranberry.data import data_path
+from cranberry.remd import RemdRunConfig, TemperatureLadderSpec, run_remd
 
 
 def test_cli_help(capsys):
@@ -9,6 +11,23 @@ def test_cli_help(capsys):
     assert "prepare" in captured.out
     assert "cg" in captured.out
     assert "inspect" in captured.out
+    assert "remd" in captured.out
+
+
+def test_cli_remd_help(capsys):
+    with pytest.raises(SystemExit) as excinfo:
+        main(["remd", "--help"])
+    assert excinfo.value.code == 0
+    captured = capsys.readouterr()
+    assert "--temperature-ladder" in captured.out
+    assert "--n-replicas" in captured.out
+    assert "--n-record" in captured.out
+    assert "--n-analysis" in captured.out
+    assert "--extra-start-pdb" in captured.out
+    assert "--write-dcd" in captured.out
+    assert "--overwrite" in captured.out
+    assert "--by-replica" in captured.out
+    assert "--by-temperature" in captured.out
 
 
 def test_cli_inspect_summary(capsys):
@@ -16,6 +35,49 @@ def test_cli_inspect_summary(capsys):
     captured = capsys.readouterr()
     assert "cranberry-rna" in captured.out
     assert "cranberry-v1-alpha.1" in captured.out
+
+
+def test_cli_remd_extract_by_replica(tmp_path, capsys):
+    path = data_path("examples/2ntCG_cg_vs_conect.pdb")
+    result = run_remd(
+        RemdRunConfig(
+            pdb_path=path,
+            steps=1,
+            output_dir=tmp_path,
+            temperature_ladder=TemperatureLadderSpec(temperatures=(298.0, 318.0)),
+            swap_steps=1,
+            overwrite=True,
+        )
+    )
+    capsys.readouterr()
+    assert main(["remd-extract", str(result.output_netcdf_path), str(path), "--output-dir", str(tmp_path), "--overwrite"]) == 0
+    captured = capsys.readouterr()
+    assert "output:" in captured.out
+    assert (tmp_path / "output_0.dcd").exists()
+    assert (tmp_path / "output_1.dcd").exists()
+
+
+
+
+def test_cli_remd_extract_by_temperature(tmp_path, capsys):
+    path = data_path("examples/2ntCG_cg_vs_conect.pdb")
+    result = run_remd(
+        RemdRunConfig(
+            pdb_path=path,
+            steps=1,
+            output_dir=tmp_path,
+            temperature_ladder=TemperatureLadderSpec(temperatures=(298.0, 318.0)),
+            swap_steps=1,
+            overwrite=True,
+        )
+    )
+    capsys.readouterr()
+    assert main(["remd-extract", str(result.output_netcdf_path), str(path), "--output-dir", str(tmp_path), "--by-temperature", "--overwrite"]) == 0
+    captured = capsys.readouterr()
+    assert "output:" in captured.out
+    assert (tmp_path / "output_T0.dcd").exists()
+    assert (tmp_path / "output_T1.dcd").exists()
+    assert (tmp_path / "output_temperature_labels.txt").exists()
 
 
 def test_cli_inspect_forcefield(capsys):
@@ -33,9 +95,10 @@ def test_cli_inspect_input(capsys):
     assert "residues: 2" in captured.out
 
 
-def test_cli_md_smoke(tmp_path, capsys):
+def test_cli_md_smoke(tmp_path, monkeypatch, capsys):
     path = data_path("examples/2ntCG_cg_vs_conect.pdb")
-    assert main(["md", str(path), "--steps", "1", "--report-interval", "1", "--output-dir", str(tmp_path), "--platform", "CPU"]) == 0
+    monkeypatch.chdir(tmp_path)
+    assert main(["md", str(path), "--steps", "1"]) == 0
     captured = capsys.readouterr()
     assert "settings: model=cranberry-v1-alpha.1" in captured.out
     assert "temperature=298.0 K" in captured.out
@@ -51,16 +114,29 @@ def test_cli_md_smoke(tmp_path, capsys):
     assert (tmp_path / "final.pdb").exists()
 
 
+@pytest.mark.remd
+def test_cli_remd_smoke_with_default_output_dir(tmp_path, monkeypatch, capsys):
+    path = data_path("examples/2ntCG_cg_vs_conect.pdb")
+    monkeypatch.chdir(tmp_path)
+    assert main(["remd", str(path), "--steps", "1", "--temperature-ladder", "298", "318", "--swap-steps", "1"]) == 0
+    captured = capsys.readouterr()
+    assert "settings:" in captured.out
+    assert "netcdf:" in captured.out
+    assert "args:" in captured.out
+    assert (tmp_path / "output.nc").exists()
+    assert (tmp_path / "args.json").exists()
+
+
 def test_cli_md_restart_smoke(tmp_path, capsys):
     path = data_path("examples/2ntCG_cg_vs_conect.pdb")
-    assert main(["md", str(path), "--steps", "1", "--report-interval", "1", "--output-dir", str(tmp_path), "--platform", "CPU"]) == 0
+    assert main(["md", str(path), "--steps", "1", "--n-record", "1", "--output-dir", str(tmp_path), "--platform", "CPU"]) == 0
     capsys.readouterr()
     assert main([
         "md",
         str(path),
         "--steps",
         "1",
-        "--report-interval",
+        "--n-record",
         "1",
         "--output-dir",
         str(tmp_path),
@@ -74,6 +150,11 @@ def test_cli_md_restart_smoke(tmp_path, capsys):
     assert (tmp_path / "checkpoint.chk").exists()
     detailed_steps = [line.split(",", 1)[0] for line in (tmp_path / "detailed.log").read_text().splitlines()[1:]]
     assert detailed_steps == ["1", "2"]
+
+
+def test_cli_md_missing_report_interval_regression(tmp_path):
+    path = data_path("examples/2ntCG_cg_vs_conect.pdb")
+    assert main(["md", str(path), "--steps", "15", "--output-dir", str(tmp_path), "--platform", "CPU"]) == 0
 
 
 def test_cli_prepare_is_noop_without_terminal_phosphate(tmp_path, capsys):

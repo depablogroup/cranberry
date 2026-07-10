@@ -82,7 +82,7 @@
 
   <h3>5'-Phosphate Insertion</h3>
   <p>When <code>add_terminal_phosphate=True</code>, the workflow looks only at the first residue of each chain. If that residue already has a <code>P</code> bead, no insertion happens. If it is missing <code>P</code>, Cranberry synthesizes one new <code>P</code> atom, bonds it to the existing <code>S3</code> bead, and increments the insertion count for that chain.</p>
-  <p>The placement heuristic is still a local hack, but it is now more explicit than the first version. The inserted phosphate is placed at a fixed <code>P-S3</code> distance of <code>0.45 nm</code>. When a downstream phosphate is available, the direction is chosen to satisfy two angle targets at the terminal <code>S3</code>: <code>angle(P, S3, S2) = 2.356 rad</code> and <code>angle(P, S3, next P) = 1.920 rad</code>. When no downstream phosphate is available, Cranberry falls back to the single-angle construction against <code>S2</code> only. This is deterministic and test-covered, but it remains a geometric heuristic rather than a chemically fitted coarse-graining procedure.</p>
+  <p>The placement heuristic is now a fixed v1 choice rather than an open modeling question. The inserted phosphate is placed at a fixed <code>P-S3</code> distance of <code>0.45 nm</code>. When a downstream phosphate is available, the direction is chosen to satisfy two angle targets at the terminal <code>S3</code>: <code>angle(P, S3, S2) = 2.356 rad</code> and <code>angle(P, S3, next P) = 1.920 rad</code>. When no downstream phosphate is available, Cranberry falls back to the single-angle construction against <code>S2</code> only. This is deterministic and test-covered, and it is intended to stay stable as part of the package contract.</p>
   <h3>Algorithm Detail</h3>
   <p>The implementation lives in <code>cranberry/prepare.py</code> and has three nested steps:</p>
   <ol>
@@ -134,7 +134,7 @@ z = sqrt(max(0, 1 - x^2 - y^2))</code></pre>
   <h2>Residual Risk</h2>
   <ul>
     <li><span class="warn">Scope:</span> this is the first preparation slice, not the full coarse-graining pipeline.</li>
-    <li><span class="warn">Geometry:</span> the phosphate placement is still a heuristic hack. It satisfies the current distance/angle targets, but it is not yet derived from a fuller upstream coarse-graining or fitting procedure.</li>
+    <li><span class="warn">Geometry:</span> the phosphate placement is a fixed deterministic heuristic. It satisfies the current distance/angle targets and is treated as part of the v1 contract.</li>
   </ul>
 
   <h2>Next</h2>

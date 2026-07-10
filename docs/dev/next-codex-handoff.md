@@ -8,6 +8,7 @@ This note is for the next Codex session working in CRANBERRY/cranberry.
 - Working tree should be clean apart from this handoff note when a new session starts.
 - Phase 4 code work is complete; no Phase 4 code changes are pending.
 - The next implementation phase is Phase 5 REMD.
+- The terminal-phosphate placement heuristic is treated as fixed v1 behavior.
 - The package is already scaffolded and installable as cranberry-rna.
 - The current public surface includes `cranberry inspect`, `cranberry prepare`, `cranberry cg`, `cranberry energy`, and `cranberry md`.
 - Phase 3 MD restart behavior is implemented and documented.
@@ -20,6 +21,7 @@ Read these files before changing anything non-trivial:
 - AGENTS.md
 - docs/dev/program.md
 - docs/dev/cranberry-v1-plan.md
+- docs/dev/remd-design.md
 - the latest report under docs/dev/progress/
 - docs/dev/migration-from-openmm-cgrna.md when touching model or fixture provenance
 
@@ -37,6 +39,7 @@ Read these files before changing anything non-trivial:
 - Phase 2 packaged model assets, validation, and energy decomposition.
 - Phase 3 MD runner, outputs, restart logic, and regression tests.
 - Phase 4 coarse-graining and canonicalization slice, plus terminal phosphate insertion support, is complete.
+- The Phase 4 phosphate-placement heuristic is frozen as part of the v1 contract.
 - Developer reports for the main phase slices under docs/dev/progress/.
 - Code review reports should include the essential code path and algorithm snippets, not just high-level summaries.
 
@@ -48,13 +51,14 @@ The next major user-facing work is Phase 5 REMD:
 - add `remd` as an optional feature
 - keep `openmmtools` out of the base install
 - define REMD success criteria, fixtures, and tests before implementation
-- before coding, write the REMD design note and define the minimum fixtures, success criteria, and dependency boundary
+- the REMD design note now lives in `docs/dev/remd-design.md`; extend it before coding if the scope changes
 
-This handoff is for a fresh Codex session. Re-read `AGENTS.md`, `docs/dev/program.md`, `docs/dev/cranberry-v1-plan.md`, and the latest report under `docs/dev/progress/`, then start with the REMD design pass.
+This handoff is for a fresh Codex session. Re-read `AGENTS.md`, `docs/dev/program.md`, `docs/dev/cranberry-v1-plan.md`, `docs/dev/remd-design.md`, and the latest report under `docs/dev/progress/`, then continue the REMD design pass.
 
 ## Practical Warnings
 
 - Do not reintroduce D_CGRNA.
 - Do not expand the public API with legacy tuning knobs unless they are explicitly promoted.
 - Preserve the OpenMM-style API and naming conventions.
+- Treat the fixed terminal-phosphate heuristic as part of the current model contract.
 - Keep tests CPU-first unless a specific task requires otherwise.

@@ -78,7 +78,7 @@ def coarse_grain_structure(pdb_path, *, output_path=None, overwrite=True):
     return CoarseGrainResult(...)</code></pre>
 
   <h3>Core Algorithm</h3>
-  <p>The converter walks each chain and residue, maps canonical residue names (<code>rA/rU/rG/rC</code>) to the CRANBERRY bead order, copies backbone and base bead coordinates from the atomistic structure, and then synthesizes the virtual sites. BC is the center of geometry of the three base beads. BN is a heuristic out-of-plane site built from the base triangle with a fixed cross-product scale.</p>
+  <p>The converter walks each chain and residue, maps canonical residue names (<code>rA/rU/rG/rC</code>) to the CRANBERRY bead order, copies backbone and base bead coordinates from the atomistic structure, and then synthesizes the virtual sites. BC is the center of geometry of the three base beads. BN is a fixed out-of-plane heuristic built from the base triangle with a constant cross-product scale.</p>
   <pre><code>for atom_name in _OUTPUT_ATOM_ORDER[residue_name]:
     if atom_name == "P":
         ... copy phosphate if present ...
@@ -99,7 +99,7 @@ def coarse_grain_structure(pdb_path, *, output_path=None, overwrite=True):
     <li>G: <code>P, S3, S2, R1, G1, G2, BC, BN</code></li>
     <li>C: <code>P, S3, S2, Y1, C1, Y2, BC, BN</code></li>
   </ul>
-  <p>The backbone and base beads are copied directly from the atomistic coordinates. BC is the average of the three base beads, and BN is an out-of-plane site built from the base-bead triangle with the same heuristic scale used in the legacy utilities.</p>
+  <p>The backbone and base beads are copied directly from the atomistic coordinates. BC is the average of the three base beads, and BN is an out-of-plane site built from the base-bead triangle with the same fixed scale used in the legacy utilities.</p>
 
   <h3>CLI Split</h3>
   <pre><code>cranberry cg atomistic_input.pdb --output atomistic_input_cg_vs_conect.pdb
@@ -118,7 +118,7 @@ cranberry prepare input_cg_vs_conect.pdb --add-terminal-phosphate</code></pre>
   <h2>Residual Risk</h2>
   <ul>
     <li><span class="warn">Scope:</span> this is a canonical atomistic-to-CG converter, not a general-purpose RNA cleaning pipeline.</li>
-    <li><span class="warn">Heuristic geometry:</span> BC/BN placement remains a legacy-style heuristic, not a fitted physical model.</li>
+    <li><span class="warn">Heuristic geometry:</span> BC/BN placement remains a fixed heuristic, not a fitted physical model.</li>
     <li><span class="warn">Documentation:</span> any downstream docs that still describe <code>cg</code> as an alias must be updated before release.</li>
   </ul>
 

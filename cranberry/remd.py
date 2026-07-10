@@ -1,0 +1,555 @@
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass, field
+from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
+from typing import Sequence
+
+import numpy as np
+import openmm as mm
+from openmm import app, unit
+
+from cranberry.forcefield import CranberryForceField, get_model_spec
+from cranberry.md import _present_force_group_names, _sha256, _write_args
+from cranberry.validation import validate_canonical_pdb
+
+try:
+    __version__ = version('cranberry-rna')
+except PackageNotFoundError:  # pragma: no cover - editable source tree before install
+    __version__ = '0+unknown'
+
+DEFAULT_REMD_T_MIN_K = 298.0
+DEFAULT_REMD_T_MAX_K = 600.0
+DEFAULT_REMD_N_REPLICAS = 8
+DEFAULT_REMD_SWAP_STEPS = 100
+DEFAULT_REMD_N_RECORD = 1000
+DEFAULT_REMD_N_ANALYSIS = 0
+
+
+@dataclass(frozen=True)
+class TemperatureLadderSpec:
+    """Describe the temperature schedule used by `cranberry remd`."""
+
+    temperatures: tuple[float, ...] | None = None
+    t_min: float = DEFAULT_REMD_T_MIN_K
+    t_max: float = DEFAULT_REMD_T_MAX_K
+    n_replicas: int = DEFAULT_REMD_N_REPLICAS
+
+    def resolve(self) -> tuple[float, ...] | None:
+        """Return an explicit ladder if one was provided."""
+
+        if self.temperatures is None:
+            return None
+        resolved = tuple(float(temperature) for temperature in self.temperatures)
+        if not resolved:
+            raise ValueError('temperatures must not be empty')
+        if any(temperature <= 0 for temperature in resolved):
+            raise ValueError('temperatures must be positive')
+        if any(b <= a for a, b in zip(resolved, resolved[1:])):
+            raise ValueError('temperatures must be strictly increasing')
+        return resolved
+
+    def validate_defaults(self) -> None:
+        if self.temperatures is not None:
+            self.resolve()
+            return
+        if self.n_replicas < 1:
+            raise ValueError('n_replicas must be at least 1')
+        if self.t_min <= 0 or self.t_max <= 0:
+            raise ValueError('t_min and t_max must be positive')
+        if self.t_max < self.t_min:
+            raise ValueError('t_max must be greater than or equal to t_min')
+
+
+@dataclass(frozen=True)
+class RemdRunConfig:
+    """Configuration for a `cranberry remd` run."""
+
+    pdb_path: Path
+    steps: int
+    temperature_ladder: TemperatureLadderSpec = field(default_factory=TemperatureLadderSpec)
+    output_dir: Path = Path('.')
+    model: str = 'default'
+    swap_steps: int = DEFAULT_REMD_SWAP_STEPS
+    n_record: int = DEFAULT_REMD_N_RECORD
+    n_analysis: int = DEFAULT_REMD_N_ANALYSIS
+    salt_concentration_millimolar: float = 150.0
+    timestep_femtosecond: float = 5.0
+    platform: str | None = 'CPU'
+    restart_from: Path | None = None
+    extra_start_pdb: Path | None = None
+    overwrite: bool = False
+    write_dcd: bool = False
+    dcd_mode: str = 'replica'
+
+
+@dataclass(frozen=True)
+class RemdRunResult:
+    """Summary of the REMD output layout."""
+
+    output_dir: Path
+    output_netcdf_path: Path
+    args_path: Path
+    output_dcd_path: Path | tuple[Path, ...] | None
+    output_dcd_manifest_path: Path | None
+    restart_from_path: Path | None
+    temperatures_kelvin: tuple[float, ...]
+    steps: int
+    iterations: int
+    swap_steps: int
+    checkpoint_interval: int
+    online_analysis_interval: int | None
+    actual_platform: str | None
+
+
+def run_remd(config: RemdRunConfig) -> RemdRunResult:
+    """Run replica exchange MD through the optional OpenMMTools stack."""
+
+    validation = validate_canonical_pdb(config.pdb_path)
+    validation.raise_for_errors()
+    if config.extra_start_pdb is not None:
+        extra_validation = validate_canonical_pdb(config.extra_start_pdb)
+        extra_validation.raise_for_errors()
+    if config.steps < 1:
+        raise ValueError('steps must be at least 1')
+    if config.swap_steps < 1:
+        raise ValueError('swap_steps must be at least 1')
+    if config.n_record < 1:
+        raise ValueError('n_record must be at least 1')
+    if config.n_analysis < 0:
+        raise ValueError('n_analysis must be zero or greater')
+
+    n_iterations = max(1, int(config.steps / config.swap_steps))
+    checkpoint_interval = max(1, int(config.steps / (config.swap_steps * config.n_record)))
+    online_analysis_interval = None if config.n_analysis == 0 else max(1, int(n_iterations / config.n_analysis))
+
+    ladder_spec = config.temperature_ladder
+    ladder_spec.validate_defaults()
+    explicit_temperatures = ladder_spec.resolve()
+
+    output_dir = Path(config.output_dir) if config.restart_from is None else Path(config.restart_from).parent
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_netcdf_path = Path(config.restart_from) if config.restart_from is not None else output_dir / 'output.nc'
+    args_path = output_dir / 'args.json'
+
+    expected_outputs = [args_path, output_netcdf_path]
+    if config.write_dcd:
+        expected_outputs.extend(_expected_dcd_paths(output_dir, config.dcd_mode, ladder_spec))
+        if config.dcd_mode == 'temperature':
+            expected_outputs.append(output_dir / 'output_temperature_labels.txt')
+    if config.restart_from is None and not config.overwrite:
+        _ensure_outputs_available(*expected_outputs)
+    elif config.restart_from is not None and not output_netcdf_path.exists():
+        raise FileNotFoundError(f'REMD NetCDF restart not found: {output_netcdf_path}')
+
+    pdb = app.PDBFile(str(config.pdb_path))
+    forcefield = CranberryForceField(config.model)
+    reference_temperature = explicit_temperatures[0] if explicit_temperatures is not None else ladder_spec.t_min
+    system = forcefield.createSystem(
+        pdb.topology,
+        positions=pdb.positions,
+        temperature=reference_temperature * unit.kelvin,
+        salt_concentration=config.salt_concentration_millimolar * unit.millimolar,
+    )
+    openmmtools, mcmc, states, multistate = _load_openmmtools()
+    move = mcmc.GHMCMove(timestep=config.timestep_femtosecond * unit.femtosecond, n_steps=config.swap_steps)
+    sampler_cls = multistate.ParallelTemperingSampler
+    actual_platform = None
+
+    if config.restart_from is None:
+        reporter = multistate.MultiStateReporter(str(output_netcdf_path), checkpoint_interval=checkpoint_interval)
+        sampler_kwargs = {'mcmc_moves': move, 'number_of_iterations': n_iterations}
+        if online_analysis_interval is not None:
+            sampler_kwargs['online_analysis_interval'] = online_analysis_interval
+        sampler = sampler_cls(**sampler_kwargs)
+        reference_state = states.ThermodynamicState(system, temperature=reference_temperature * unit.kelvin)
+        n_replicas = len(explicit_temperatures) if explicit_temperatures is not None else ladder_spec.n_replicas
+        start_positions = _initial_positions(pdb, config.extra_start_pdb)
+        sampler_states = [
+            states.SamplerState(start_positions[index % len(start_positions)], box_vectors=pdb.topology.getPeriodicBoxVectors())
+            for index in range(n_replicas)
+        ]
+        create_kwargs = _build_parallel_tempering_kwargs(ladder_spec, explicit_temperatures)
+        sampler.create(reference_state, sampler_states, reporter, **create_kwargs)
+        actual_platform = _actual_sampler_platform(sampler, reference_state)
+        sampler.minimize()
+        sampler.run()
+        stored_temperatures = _read_temperatures_from_reporter(reporter)
+        _close_if_present(reporter)
+    else:
+        reporter = multistate.MultiStateReporter(str(output_netcdf_path), open_mode='r', checkpoint_interval=checkpoint_interval)
+        stored_temperatures = _read_temperatures_from_reporter(reporter)
+        expected_temperatures = _expected_temperatures(ladder_spec)
+        if stored_temperatures != expected_temperatures:
+            raise ValueError(
+                'REMD restart ladder does not match the existing NetCDF storage: '
+                f'expected {expected_temperatures}, found {stored_temperatures}'
+            )
+        sampler = sampler_cls.from_storage(str(output_netcdf_path))
+        sampler.extend(n_iterations)
+        _close_if_present(reporter)
+
+    output_dcd_path = None
+    output_dcd_manifest_path = None
+    if config.write_dcd:
+        output_dcd_path = translate_netcdf_to_dcd(
+            output_netcdf_path,
+            pdb_path=config.pdb_path,
+            output_dir=output_dir,
+            output_mode=config.dcd_mode,
+            overwrite=config.overwrite,
+        )
+        if config.dcd_mode == 'temperature':
+            output_dcd_manifest_path = output_dir / 'output_temperature_labels.txt'
+
+    _write_args(
+        args_path,
+        _build_remd_args(
+            config=config,
+            model_name=get_model_spec(config.model).name,
+            output_netcdf_path=output_netcdf_path,
+            output_dcd_path=output_dcd_path,
+            output_dcd_manifest_path=output_dcd_manifest_path,
+            temperatures_kelvin=stored_temperatures,
+            n_iterations=n_iterations,
+            checkpoint_interval=checkpoint_interval,
+            online_analysis_interval=online_analysis_interval,
+            actual_platform=actual_platform,
+            openmmtools_version=getattr(openmmtools, '__version__', None),
+            pdb=pdb,
+            system=system,
+        ),
+    )
+
+    _close_if_present(sampler)
+
+    return RemdRunResult(
+        output_dir=output_dir,
+        output_netcdf_path=output_netcdf_path,
+        args_path=args_path,
+        output_dcd_path=output_dcd_path,
+        output_dcd_manifest_path=output_dcd_manifest_path,
+        restart_from_path=Path(config.restart_from) if config.restart_from is not None else None,
+        temperatures_kelvin=stored_temperatures,
+        steps=config.steps,
+        iterations=n_iterations,
+        swap_steps=config.swap_steps,
+        checkpoint_interval=checkpoint_interval,
+        online_analysis_interval=online_analysis_interval,
+        actual_platform=actual_platform,
+    )
+
+
+def translate_netcdf_to_dcd(
+    netcdf_path: str | Path,
+    *,
+    pdb_path: str | Path,
+    output_dir: str | Path | None = None,
+    output_mode: str = 'replica',
+    overwrite: bool = False,
+) -> Path | tuple[Path, ...]:
+    """Translate a REMD NetCDF trajectory to DCD files."""
+
+    netcdf_path = Path(netcdf_path)
+    pdb_path = Path(pdb_path)
+    output_dir = Path(output_dir) if output_dir is not None else netcdf_path.parent
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    _, _, _, multistate = _load_openmmtools()
+    reporter = multistate.MultiStateReporter(str(netcdf_path), open_mode='r', checkpoint_interval=1)
+    pdb = app.PDBFile(str(pdb_path))
+    iterations = list(reporter.read_checkpoint_iterations())
+    replica_thermodynamic_states = np.asarray(reporter.read_replica_thermodynamic_states())
+    if replica_thermodynamic_states.size == 0:
+        raise ValueError('REMD NetCDF file does not contain replica state assignments')
+    thermodynamic_states, _ = reporter.read_thermodynamic_states()
+    temperatures = tuple(
+        float(getattr(state, 'temperature').value_in_unit(unit.kelvin))
+        for state in thermodynamic_states
+    )
+
+    if output_mode == 'replica':
+        output_paths = tuple(output_dir / f'output_{replica_index}.dcd' for replica_index in range(replica_thermodynamic_states.shape[1]))
+        if not overwrite:
+            _ensure_outputs_available(*output_paths)
+        _write_replica_dcds(reporter, pdb, iterations, output_paths)
+        _close_if_present(reporter)
+        print('remd-extract mode: replica')
+        for replica_index, path in enumerate(output_paths):
+            print(f'replica {replica_index}: {path}')
+        return output_paths
+    if output_mode == 'temperature':
+        output_paths = tuple(output_dir / f'output_T{temperature_index}.dcd' for temperature_index in range(len(temperatures)))
+        manifest_path = output_dir / 'output_temperature_labels.txt'
+        if not overwrite:
+            _ensure_outputs_available(*output_paths, manifest_path)
+        _write_temperature_dcds(reporter, pdb, iterations, replica_thermodynamic_states, temperatures, output_paths)
+        _write_temperature_manifest(manifest_path, temperatures)
+        _close_if_present(reporter)
+        print('remd-extract mode: temperature')
+        for temperature_index, (temperature, path) in enumerate(zip(temperatures, output_paths, strict=True)):
+            print(f'T{temperature_index}: {temperature:.3f} K -> {path}')
+        print(f'temperature map: {manifest_path}')
+        return output_paths
+    raise ValueError("output_mode must be either 'replica' or 'temperature'")
+
+
+def build_remd_parser(subparsers, *, default_func) -> argparse.ArgumentParser:
+    """Add the `cranberry remd` parser to a subparser collection."""
+
+    parser = subparsers.add_parser(
+        'remd',
+        help='run CRANBERRY replica exchange MD',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument('pdb', type=Path, help='canonical coarse-grained CRANBERRY PDB')
+    parser.add_argument('--steps', type=int, required=True, default=argparse.SUPPRESS, help='total MD integration steps; REMD iterations are derived from steps/swap-steps')
+    parser.add_argument('--output-dir', type=Path, default=Path('.'), help='directory for REMD outputs; defaults to current directory')
+    parser.add_argument('--model', default='default', help='force-field model name; default resolves to cranberry-v1-alpha.1')
+    parser.add_argument('--t-min', type=float, default=DEFAULT_REMD_T_MIN_K, help='minimum temperature in kelvin for parallel tempering')
+    parser.add_argument('--t-max', type=float, default=DEFAULT_REMD_T_MAX_K, help='maximum temperature in kelvin for parallel tempering')
+    parser.add_argument('--n-replicas', type=int, default=DEFAULT_REMD_N_REPLICAS, help='number of replicas in parallel tempering')
+    parser.add_argument('--temperature-ladder', type=float, nargs='+', default=argparse.SUPPRESS, metavar='K', help='explicit replica temperatures in kelvin; overrides t_min/t_max/n_replicas')
+    parser.add_argument('--swap-steps', type=int, default=DEFAULT_REMD_SWAP_STEPS, help='MD steps between replica-exchange attempts')
+    parser.add_argument('--n-record', type=int, default=DEFAULT_REMD_N_RECORD, help='target number of NetCDF checkpoint records; checkpoint interval is derived in REMD iterations')
+    parser.add_argument('--n-analysis', type=int, default=DEFAULT_REMD_N_ANALYSIS, help='target number of online-analysis records; 0 disables OpenMMTools online analysis')
+    parser.add_argument('--extra-start-pdb', type=Path, default=None, help='additional canonical CG PDB whose coordinates seed alternating initial replicas')
+    parser.add_argument('--salt', type=float, default=150.0, help='salt concentration in millimolar')
+    parser.add_argument('--timestep', type=float, default=5.0, help='integration timestep in femtoseconds')
+    parser.add_argument('--platform', default='CPU', help="OpenMM platform name; use 'default' to let OpenMM choose")
+    parser.add_argument('--restart-from', type=Path, default=None, help='OpenMMTools NetCDF storage to restart from')
+    parser.add_argument('--overwrite', action='store_true', help='allow overwriting existing REMD NetCDF outputs; default is no-overwrite')
+    _add_dcd_mode_options(parser)
+    parser.add_argument('--write-dcd', action='store_true', help='translate the REMD NetCDF trajectory to DCD after the run')
+    parser.set_defaults(func=default_func, workflow='remd')
+    return parser
+
+
+def _load_openmmtools():
+    try:
+        import openmmtools
+        from openmmtools import mcmc, states
+        import openmmtools.multistate as multistate
+    except ImportError as exc:  # pragma: no cover - exercised in environments without the extra
+        raise ImportError("REMD requires the optional 'remd' extra (openmmtools).") from exc
+    return openmmtools, mcmc, states, multistate
+
+
+def _initial_positions(pdb: app.PDBFile, extra_start_pdb: Path | None):
+    positions = [pdb.positions]
+    if extra_start_pdb is not None:
+        extra_pdb = app.PDBFile(str(extra_start_pdb))
+        if extra_pdb.topology.getNumAtoms() != pdb.topology.getNumAtoms():
+            raise ValueError('extra-start-pdb must contain the same number of atoms as the primary PDB')
+        positions.append(extra_pdb.positions)
+    return positions
+
+
+def _actual_sampler_platform(sampler, reference_state) -> str | None:
+    try:
+        context, _integrator = sampler.energy_context_cache.get_context(reference_state)
+        return context.getPlatform().getName()
+    except Exception:
+        return None
+
+
+def _build_parallel_tempering_kwargs(ladder_spec: TemperatureLadderSpec, explicit_temperatures: tuple[float, ...] | None) -> dict[str, object]:
+    if explicit_temperatures is not None:
+        return {
+            'temperatures': [temperature * unit.kelvin for temperature in explicit_temperatures],
+            'n_temperatures': len(explicit_temperatures),
+        }
+    return {
+        'min_temperature': ladder_spec.t_min * unit.kelvin,
+        'max_temperature': ladder_spec.t_max * unit.kelvin,
+        'n_temperatures': ladder_spec.n_replicas,
+    }
+
+
+def _build_remd_args(
+    *,
+    config: RemdRunConfig,
+    model_name: str,
+    output_netcdf_path: Path,
+    output_dcd_path: Path | tuple[Path, ...] | None,
+    output_dcd_manifest_path: Path | None,
+    temperatures_kelvin: tuple[float, ...],
+    n_iterations: int,
+    checkpoint_interval: int,
+    online_analysis_interval: int | None,
+    actual_platform: str | None,
+    openmmtools_version: str | None,
+    pdb: app.PDBFile,
+    system: mm.System,
+) -> dict[str, object]:
+    pdb_path = Path(config.pdb_path)
+    ladder_spec = config.temperature_ladder
+    explicit_temperatures = ladder_spec.resolve()
+    box_vectors = pdb.topology.getPeriodicBoxVectors()
+    return {
+        'schema_version': 1,
+        'run_kind': 'remd',
+        'pdb_path': str(pdb_path),
+        'pdb_sha256': _sha256(pdb_path),
+        'extra_start_pdb_path': str(config.extra_start_pdb) if config.extra_start_pdb is not None else None,
+        'extra_start_pdb_sha256': _sha256(config.extra_start_pdb) if config.extra_start_pdb is not None else None,
+        'model': model_name,
+        'steps': int(config.steps),
+        'iterations': int(n_iterations),
+        'swap_steps': int(config.swap_steps),
+        'n_record': int(config.n_record),
+        'checkpoint_interval': int(checkpoint_interval),
+        'n_analysis': int(config.n_analysis),
+        'online_analysis_interval': online_analysis_interval,
+        'temperature_ladder_kelvin': [float(temperature) for temperature in temperatures_kelvin],
+        'temperature_ladder_input_kelvin': list(explicit_temperatures) if explicit_temperatures is not None else None,
+        't_min_kelvin': float(ladder_spec.t_min),
+        't_max_kelvin': float(ladder_spec.t_max),
+        'n_replicas': int(len(temperatures_kelvin)),
+        'requested_n_replicas': int(ladder_spec.n_replicas),
+        'salt_millimolar': float(config.salt_concentration_millimolar),
+        'timestep_femtosecond': float(config.timestep_femtosecond),
+        'platform': config.platform,
+        'actual_platform': actual_platform,
+        'restart_from': str(config.restart_from) if config.restart_from is not None else None,
+        'overwrite': bool(config.overwrite),
+        'write_dcd': bool(config.write_dcd),
+        'dcd_mode': config.dcd_mode,
+        'output_netcdf_path': str(output_netcdf_path),
+        'output_dcd_path': _stringify_output_path(output_dcd_path),
+        'output_dcd_manifest_path': str(output_dcd_manifest_path) if output_dcd_manifest_path is not None else None,
+        'structure_summary': {
+            'chains': sum(1 for _ in pdb.topology.chains()),
+            'residues': pdb.topology.getNumResidues(),
+            'atoms': pdb.topology.getNumAtoms(),
+            'bonds': sum(1 for _ in pdb.topology.bonds()),
+        },
+        'periodic_box_vectors_present': box_vectors is not None,
+        'force_groups': _present_force_group_names(system),
+        'sampler': 'ParallelTemperingSampler',
+        'mcmc_move': 'GHMCMove',
+        'cranberry_version': __version__,
+        'openmm_version': getattr(mm, '__version__', None),
+        'openmmtools_version': openmmtools_version,
+    }
+
+
+def _stringify_output_path(path: Path | tuple[Path, ...] | None):
+    if path is None:
+        return None
+    if isinstance(path, tuple):
+        return [str(item) for item in path]
+    return str(path)
+
+
+def _expected_temperatures(ladder_spec: TemperatureLadderSpec) -> tuple[float, ...]:
+    if ladder_spec.temperatures is not None:
+        return ladder_spec.resolve() or ()
+    if ladder_spec.n_replicas == 1:
+        return (float(ladder_spec.t_min),)
+    temperature_unit = unit.kelvin
+    temperatures = np.logspace(
+        np.log10(ladder_spec.t_min / temperature_unit),
+        np.log10(ladder_spec.t_max / temperature_unit),
+        num=ladder_spec.n_replicas,
+    ) * temperature_unit
+    return tuple(float(temperature.value_in_unit(unit.kelvin)) for temperature in temperatures)
+
+
+def _add_dcd_mode_options(parser: argparse.ArgumentParser) -> None:
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--by-replica', dest='dcd_mode', action='store_const', const='replica', help='write one DCD per replica; this matches the legacy default extractor behavior')
+    mode.add_argument('--by-temperature', dest='dcd_mode', action='store_const', const='temperature', help='write one DCD per thermodynamic temperature (output_T0, output_T1, ...)')
+    parser.set_defaults(dcd_mode='replica')
+
+
+def _expected_dcd_paths(output_dir: Path, output_mode: str, ladder_spec: TemperatureLadderSpec) -> tuple[Path, ...]:
+    if output_mode == 'replica':
+        resolved = ladder_spec.resolve()
+        n_replicas = len(resolved) if resolved is not None else ladder_spec.n_replicas
+        return tuple(output_dir / f'output_{replica_index}.dcd' for replica_index in range(n_replicas))
+    if output_mode == 'temperature':
+        resolved = ladder_spec.resolve()
+        n_temperatures = len(resolved) if resolved is not None else ladder_spec.n_replicas
+        return tuple(output_dir / f'output_T{temperature_index}.dcd' for temperature_index in range(n_temperatures))
+    raise ValueError("output_mode must be either 'replica' or 'temperature'")
+
+
+def _write_temperature_dcds(reporter, pdb: app.PDBFile, iterations, replica_thermodynamic_states, temperatures: tuple[float, ...], output_paths: tuple[Path, ...]) -> None:
+    handles = []
+    dcd_writers = []
+    try:
+        for path in output_paths:
+            handle = path.open('wb')
+            handles.append(handle)
+            dcd_writers.append(app.DCDFile(handle, pdb.topology, 1 * unit.femtosecond))
+        for temperature_index, _temperature in enumerate(temperatures):
+            for frame_index, iteration in enumerate(iterations):
+                state_samplers = reporter.read_sampler_states(iteration)
+                replica_index = _find_replica_index(replica_thermodynamic_states, frame_index, temperature_index)
+                sampler_state = state_samplers[replica_index]
+                dcd_writers[temperature_index].writeModel(sampler_state.positions, periodicBoxVectors=getattr(sampler_state, 'box_vectors', None))
+    finally:
+        for handle in handles:
+            handle.close()
+
+
+def _write_temperature_manifest(manifest_path: Path, temperatures: tuple[float, ...]) -> None:
+    lines = [
+        '# REMD temperature labels',
+        '# T{i} maps to the i-th thermodynamic state in the stored NetCDF ladder',
+    ]
+    for temperature_index, temperature in enumerate(temperatures):
+        lines.append(f'T{temperature_index} = {temperature:.3f} K')
+    manifest_path.write_text('\n'.join(lines) + '\n')
+
+
+def _write_replica_dcds(reporter, pdb: app.PDBFile, iterations, output_paths: tuple[Path, ...]) -> None:
+    handles = []
+    dcd_writers = []
+    try:
+        for path in output_paths:
+            handle = path.open('wb')
+            handles.append(handle)
+            dcd_writers.append(app.DCDFile(handle, pdb.topology, 1 * unit.femtosecond))
+        for iteration in iterations:
+            state_samplers = reporter.read_sampler_states(iteration)
+            for replica_index, dcd in enumerate(dcd_writers):
+                sampler_state = state_samplers[replica_index]
+                dcd.writeModel(sampler_state.positions, periodicBoxVectors=getattr(sampler_state, 'box_vectors', None))
+    finally:
+        for handle in handles:
+            handle.close()
+
+
+def _ensure_outputs_available(*paths: Path) -> None:
+    existing = [str(path) for path in paths if path.exists()]
+    if existing:
+        raise FileExistsError('Refusing to overwrite existing REMD outputs: ' + ', '.join(existing))
+
+
+def _read_temperatures_from_reporter(reporter) -> tuple[float, ...]:
+    thermodynamic_states, _ = reporter.read_thermodynamic_states()
+    temperatures: list[float] = []
+    for state in thermodynamic_states:
+        temperature = getattr(state, 'temperature', None)
+        if temperature is None:
+            raise ValueError('REMD storage does not contain temperature metadata')
+        temperatures.append(float(temperature.value_in_unit(unit.kelvin)))
+    return tuple(temperatures)
+
+
+def _find_replica_index(replica_thermodynamic_states, iteration_index: int, temperature_index: int) -> int:
+    replica_matches = np.where(replica_thermodynamic_states[iteration_index] == temperature_index)[0]
+    if len(replica_matches) != 1:
+        raise ValueError(
+            f'expected exactly one replica for thermodynamic state {temperature_index} at iteration {iteration_index}'
+        )
+    return int(replica_matches[0])
+
+
+def _close_if_present(obj) -> None:
+    close = getattr(obj, 'close', None)
+    if callable(close):
+        close()

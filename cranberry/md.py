@@ -34,6 +34,8 @@ class MDRunResult:
     restart_from_path: Path | None
     steps: int
     report_interval: int
+    n_record: int
+    minimization_report_path: Path | None
 
 
 def create_simulation(
@@ -91,16 +93,20 @@ def run_md(
     salt_concentration=150 * unit.millimolar,
     timestep=5 * unit.femtosecond,
     report_interval: int | None = None,
+    n_record: int = 1000,
     platform: str | None = "CPU",
     restart_from: str | Path | None = None,
     overwrite: bool = True,
+    write_minimization_report: bool = False,
 ) -> MDRunResult:
     """Run a short OpenMM-native CRANBERRY MD simulation."""
 
     if steps < 1:
         raise ValueError("steps must be at least 1")
+    if n_record < 1:
+        raise ValueError("n_record must be at least 1")
     if report_interval is None:
-        report_interval = max(1, min(1000, steps))
+        report_interval = max(1, int(steps / n_record))
     if report_interval < 1:
         raise ValueError("report_interval must be at least 1")
 
@@ -120,6 +126,8 @@ def run_md(
         restart_from_path=restart_from_path,
         steps=steps,
         report_interval=report_interval,
+        n_record=n_record,
+        minimization_report_path=(output_dir / "minimization_report.json") if write_minimization_report else None,
     )
     append_outputs = restart_from_path is not None
     dcd_append = append_outputs and result.dcd_path.exists()
@@ -154,6 +162,7 @@ def run_md(
         model=model_name,
         steps=steps,
         report_interval=report_interval,
+        n_record=n_record,
         temperature=temperature,
         salt_concentration=salt_concentration,
         timestep=timestep,
@@ -164,6 +173,7 @@ def run_md(
         log_append=log_append,
         detailed_append=detailed_append,
         overwrite=overwrite,
+        write_minimization_report=write_minimization_report,
     )
     if restart_from_path is not None:
         previous_args = _load_restart_args(result.args_path)
@@ -193,14 +203,25 @@ def run_md(
             step=True,
             time=True,
             potentialEnergy=True,
+            kineticEnergy=True,
+            totalEnergy=True,
             temperature=True,
+            elapsedTime=True,
             speed=True,
+            remainingTime=True,
             totalSteps=steps,
             append=log_append,
         )
     )
     simulation.reporters.append(DetailedEnergyReporter(result.detailed_log_path, report_interval, append=detailed_append))
     simulation.reporters.append(app.CheckpointReporter(str(result.checkpoint_path), report_interval))
+
+    minimization_summary = _minimize_and_report(simulation, result.minimization_report_path)
+    print(
+        "minimization: "
+        f"potential_energy_before={minimization_summary['before_kj_per_mol']:.8f} kJ/mol, "
+        f"after={minimization_summary['after_kj_per_mol']:.8f} kJ/mol"
+    )
 
     _write_args(result.args_path, run_args)
     simulation.step(steps)
@@ -216,13 +237,41 @@ def run_md(
     return result
 
 
+
+def _minimize_and_report(simulation: app.Simulation, report_path: Path | None) -> dict[str, object]:
+    before = _energy_snapshot(simulation)
+    simulation.minimizeEnergy()
+    after = _energy_snapshot(simulation)
+    summary = {
+        "before_kj_per_mol": before["potential_energy_kj_per_mol"],
+        "after_kj_per_mol": after["potential_energy_kj_per_mol"],
+        "force_groups_before_kj_per_mol": before["force_groups_kj_per_mol"],
+        "force_groups_after_kj_per_mol": after["force_groups_kj_per_mol"],
+    }
+    if report_path is not None:
+        report_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    return summary
+
+
+def _energy_snapshot(simulation: app.Simulation) -> dict[str, object]:
+    state = simulation.context.getState(getEnergy=True)
+    force_groups = {}
+    for name in _present_force_group_names(simulation.system):
+        group = FORCE_GROUP_IDS[name]
+        group_state = simulation.context.getState(getEnergy=True, groups={group})
+        force_groups[name] = group_state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
+    return {
+        "potential_energy_kj_per_mol": state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole),
+        "force_groups_kj_per_mol": force_groups,
+    }
+
 def _as_quantity(value, default_unit):
     if hasattr(value, "unit"):
         return value
     return value * default_unit
 
 
-def _build_args(*, pdb_path, model, steps, report_interval, temperature, salt_concentration, timestep, platform, restart_from, append_outputs, dcd_append, log_append, detailed_append, overwrite):
+def _build_args(*, pdb_path, model, steps, report_interval, n_record, temperature, salt_concentration, timestep, platform, restart_from, append_outputs, dcd_append, log_append, detailed_append, overwrite, write_minimization_report):
     pdb_path = Path(pdb_path)
     return {
         "schema_version": 1,
@@ -232,6 +281,7 @@ def _build_args(*, pdb_path, model, steps, report_interval, temperature, salt_co
         "model": model,
         "steps": int(steps),
         "report_interval": int(report_interval),
+        "n_record": int(n_record),
         "temperature_kelvin": float(_as_quantity(temperature, unit.kelvin).value_in_unit(unit.kelvin)),
         "salt_millimolar": float(_as_quantity(salt_concentration, unit.millimolar).value_in_unit(unit.millimolar)),
         "timestep_femtosecond": float(_as_quantity(timestep, unit.femtosecond).value_in_unit(unit.femtosecond)),
@@ -242,6 +292,7 @@ def _build_args(*, pdb_path, model, steps, report_interval, temperature, salt_co
         "log_append": bool(log_append),
         "detailed_append": bool(detailed_append),
         "overwrite": bool(overwrite),
+        "write_minimization_report": bool(write_minimization_report),
         "cranberry_version": __version__,
         "openmm_version": getattr(mm, "__version__", None),
     }

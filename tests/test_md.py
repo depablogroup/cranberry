@@ -59,6 +59,7 @@ def test_run_md_writes_default_outputs(tmp_path):
     assert args["run_kind"] == "md"
     assert args["steps"] == 1
     assert args["report_interval"] == 1
+    assert args["n_record"] == 1000
     assert args["model"] == "cranberry-v1-alpha.1"
     assert args["restart_from"] is None
     assert args["append_outputs"] is False
@@ -67,11 +68,35 @@ def test_run_md_writes_default_outputs(tmp_path):
     assert args["salt_millimolar"] == pytest.approx(150)
     assert args["timestep_femtosecond"] == pytest.approx(5)
 
+    log_header = result.log_path.read_text().splitlines()[0]
+    assert "Kinetic Energy" in log_header
+    assert "Total Energy" in log_header
+    assert "Elapsed Time" in log_header
+    assert "Time Remaining" in log_header
+
     detailed = result.detailed_log_path.read_text().splitlines()
     assert detailed[0].startswith('#"Step","Time (ps)","Potential Energy (kJ/mole)","bond (kJ/mole)"')
     assert len(detailed) == 2
     validate_canonical_pdb(result.final_pdb_path).raise_for_errors()
 
+
+
+def test_run_md_writes_minimization_report(tmp_path):
+    result = run_md(
+        data_path("examples/2ntCG_cg_vs_conect.pdb"),
+        steps=1,
+        report_interval=1,
+        output_dir=tmp_path,
+        platform="CPU",
+        write_minimization_report=True,
+    )
+
+    assert result.minimization_report_path is not None
+    report = json.loads(result.minimization_report_path.read_text())
+    assert "before_kj_per_mol" in report
+    assert "after_kj_per_mol" in report
+    assert "force_groups_before_kj_per_mol" in report
+    assert "force_groups_after_kj_per_mol" in report
 
 def test_run_md_archives_distinct_args_only(tmp_path):
     pdb = data_path("examples/2ntCG_cg_vs_conect.pdb")

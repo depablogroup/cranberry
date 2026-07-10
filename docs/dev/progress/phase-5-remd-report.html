@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CRANBERRY Phase 5 REMD Status Report</title>
+  <style>
+    :root { --ink:#18222c; --muted:#5b6670; --line:#d9e0e7; --soft:#f5f7fa; --code:#0f1720; --ok:#137348; --warn:#9a5b00; }
+    body { margin:0; color:var(--ink); font:15px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:white; }
+    main { max-width:1120px; margin:0 auto; padding:36px 28px 72px; }
+    h1 { margin:0 0 10px; font-size:32px; line-height:1.15; }
+    h2 { margin:32px 0 12px; padding-top:22px; border-top:1px solid var(--line); font-size:22px; }
+    h3 { margin:20px 0 8px; font-size:17px; }
+    p { margin:0 0 12px; color:var(--muted); }
+    code, pre { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace; }
+    pre { margin:10px 0 0; padding:13px 15px; overflow:auto; color:#edf5ff; background:var(--code); border-radius:8px; font-size:13px; }
+    table { width:100%; border-collapse:collapse; margin:12px 0 0; font-size:14px; }
+    th, td { border-bottom:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+    th { background:var(--soft); }
+    ul { margin:8px 0 0 20px; padding:0; }
+    li { margin:5px 0; }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+    .card { border:1px solid var(--line); border-radius:8px; padding:15px; }
+    .ok { color:var(--ok); font-weight:700; }
+    .warn { color:var(--warn); font-weight:700; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>CRANBERRY Phase 5 REMD Status Report</h1>
+  <p>Developer status note for the REMD and MD-output contract update. REMD now has provenance metadata, interval controls, extra initial structures, and temperature-indexed DCD extraction. The MD CLI default-path regression is fixed through the new minimal smoke test.</p>
+
+  <h2>Implemented</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>MD Defaults And Logs</h3>
+      <ul>
+        <li><code>cranberry md &lt;pdb&gt; --steps N</code> is now covered by a minimal CLI smoke test and passes without <code>--report-interval</code>.</li>
+        <li>User-facing MD output density moved to <code>--n-record</code>; <code>report_interval</code> remains derived metadata/API compatibility.</li>
+        <li>The state log restores legacy fields: kinetic energy, total energy, elapsed time, and remaining time.</li>
+        <li><code>--write-minimization-report</code> writes pre/post minimization total and force-group energies; the default path prints a compact total-energy note.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>REMD Contract</h3>
+      <ul>
+        <li><code>--steps</code> is total MD integration steps; OpenMMTools iterations are derived from <code>steps // swap_steps</code>.</li>
+        <li><code>--n-record</code> derives the NetCDF checkpoint interval; <code>--n-analysis 0</code> disables online analysis.</li>
+        <li><code>--extra-start-pdb</code> adds a second coordinate source for alternating initial replicas.</li>
+        <li><code>args.json</code> records REMD provenance while <code>output.nc</code> remains the authoritative restart artifact.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>Key Code Paths</h2>
+  <pre><code>n_iterations = max(1, int(config.steps / config.swap_steps))
+checkpoint_interval = max(1, int(config.steps / (config.swap_steps * config.n_record)))
+online_analysis_interval = None if config.n_analysis == 0 else max(1, int(n_iterations / config.n_analysis))</code></pre>
+  <pre><code>remd-extract --by-temperature
+  output_T0.dcd
+  output_T1.dcd
+  output_temperature_labels.txt</code></pre>
+
+  <h2>Validation</h2>
+  <table>
+    <thead><tr><th>Check</th><th>Status</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>python -m py_compile cranberry/cranberry/md.py cranberry/cranberry/remd.py cranberry/cranberry/cli/main.py cranberry/tests/test_md.py cranberry/tests/test_remd.py cranberry/tests/test_cli.py</code></td><td class="ok">passed</td><td>Syntax check passed after the MD/REMD/CLI/test updates.</td></tr>
+      <tr><td><code>conda run -n cranberry-dev python -m pytest -q cranberry/tests/test_md.py cranberry/tests/test_remd.py cranberry/tests/test_cli.py</code></td><td class="ok">passed</td><td>33 passed in 127.84 s. One existing NumPy ABI warning remains from the environment.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Known Follow-Up</h2>
+  <p><span class="warn">PBC/box force behavior still needs a dedicated audit phase.</span> Current REMD can carry topology box vectors into sampler states, but nonbonded/bonded force-level periodic behavior and DCD box-dimension handling should be reviewed before claiming full PBC support.</p>
+</main>
+</body>
+</html>
