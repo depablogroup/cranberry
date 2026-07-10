@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>MD Periodic Checkpoint Review</title></head>
+<body>
+<main>
+<h1>MD Periodic Checkpoint Review</h1>
+<p>Developer review for the Quan/EvgeniaWT restart-file investigation and tentative fix.</p>
+<h2>Reproduction</h2>
+<ul>
+<li>Unpacked <code>/tmp/user_uploaded_attachments/slack/md-out-EvgeniaWT.zip</code> and inspected <code>home/quantang1903/cranberry/pdb/cg_6spn/md-out-EvgeniaWT</code>.</li>
+<li>The requested 200,000,000-step run has <code>args.json</code>, <code>output.dcd</code>, <code>log</code>, and <code>detailed.log</code>, but no <code>checkpoint.chk</code> or <code>final.pdb</code>.</li>
+<li>The last standard log entry is step <code>19,700,000</code>, so the run stopped at about 9.85% of the requested production length.</li>
+</ul>
+<h2>Root Cause</h2>
+<p>The MD runner previously wrote <code>checkpoint.chk</code> only after <code>simulation.step(steps)</code> returned. Long runs interrupted before completion could therefore contain trajectory and log reporter output but no checkpoint or final PDB.</p>
+<h2>Change</h2>
+<pre><code>simulation.reporters.append(DetailedEnergyReporter(result.detailed_log_path, report_interval, append=detailed_append))
+simulation.reporters.append(app.CheckpointReporter(str(result.checkpoint_path), report_interval))
+
+_write_args(result.args_path, run_args)
+simulation.step(steps)
+simulation.saveCheckpoint(str(result.checkpoint_path))</code></pre>
+<p>The added OpenMM <code>CheckpointReporter</code> refreshes <code>checkpoint.chk</code> at the same interval as the trajectory and log reporters. The explicit final <code>saveCheckpoint()</code> remains, so completed runs still end with a latest checkpoint.</p>
+<h2>Docs</h2>
+<ul>
+<li>Updated quickstart restart guidance to note that checkpoints are refreshed during the run.</li>
+<li>Updated output reference and MD tutorial wording to distinguish periodic checkpoint refresh from completed-run final PDB generation.</li>
+</ul>
+<h2>Verification</h2>
+<ul>
+<li><code>python -m pytest tests/test_md.py tests/test_cli.py -q</code>: 20 passed.</li>
+<li><code>python -m pytest -q</code>: 38 passed.</li>
+<li>Short EvgeniaWT CPU run with <code>--steps 2 --report-interval 1</code> produced <code>checkpoint.chk</code> and <code>final.pdb</code>.</li>
+</ul>
+<h2>Risks</h2>
+<ul>
+<li>If a job is interrupted before the first report interval, there still will not be a checkpoint. Users should choose a report interval appropriate for the queue/runtime risk.</li>
+<li>OpenMM checkpoint portability remains platform/system dependent.</li>
+</ul>
+</main>
+</body>
+</html>
