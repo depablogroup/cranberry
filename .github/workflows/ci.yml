@@ -31,10 +31,11 @@ jobs:
           channels: conda-forge
           channel-priority: strict
 
-      - name: Install package and REMD dependencies
-        run: |
-          conda install -y pip setuptools wheel openmm openmmtools h5py pytest pre-commit build sphinx myst-parser
-          python -m pip install -e . --no-deps
+      - name: Install REMD dependencies
+        run: conda install -y pip setuptools wheel openmm openmmtools h5py pytest pre-commit build sphinx myst-parser
+
+      - name: Install cranberry package
+        run: python -m pip install --no-deps -e ".[dev,remd]"
 
       - name: Run tests
         run: python -m pytest -q
