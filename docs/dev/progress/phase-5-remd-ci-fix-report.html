@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Phase 5 REMD CI Fix Report</title></head>
+<body>
+<h1>Phase 5 REMD CI Fix Report</h1>
+<p>Most recent commit <code>e635763</code> added REMD tests while the CI environment originally installed only <code>.[dev]</code>. The first attempted fix changed the pip editable install to <code>.[dev,remd]</code>, but <code>openmmtools</code> is distributed for normal use through conda-forge, so a pip-only GitHub Actions environment can still fail while resolving the REMD extra.</p>
+<h2>Fix</h2>
+<ul>
+<li>Changed GitHub Actions to create an activated conda environment with <code>conda-incubator/setup-miniconda</code>.</li>
+<li>Installed <code>pip</code>, <code>setuptools</code>, <code>wheel</code>, <code>openmm</code>, <code>openmmtools</code>, and the dev/documentation dependencies from <code>conda-forge</code>.</li>
+<li>Installed the local cranberry package in a separate explicit step with <code>python -m pip install --no-deps -e ".[dev,remd]"</code> after conda dependency resolution, avoiding a second pip attempt to resolve conda-managed scientific packages while still installing cranberry itself.</li>
+<li>Kept the REMD marker on CLI extraction tests because they create real REMD NetCDF files via <code>run_remd</code>; GitHub CI should now execute them in the conda environment.</li>
+</ul>
+<h2>Risk</h2>
+<p>Moderate. CI now depends on conda-forge availability, but that matches the dependency channel needed for openmmtools-backed REMD validation.</p>
+<h2>Validation</h2>
+<ul>
+<li><code>python -m pytest tests/test_cli.py::test_cli_help tests/test_cli.py::test_cli_remd_help -q</code></li>
+<li><code>python -m pip install -e ".[dev,remd]"</code> remains blocked locally by this environment's network tunnel and is no longer the CI install strategy.</li>
+</ul>
+</body>
+</html>
