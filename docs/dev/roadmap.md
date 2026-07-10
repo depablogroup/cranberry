@@ -13,6 +13,7 @@ The repository already has:
 - `CranberryForceField` with an OpenMM-style API
 - CPU energy decomposition
 - a basic MD runner with restart handling and output bookkeeping
+- an optional REMD runner with OpenMMTools-backed NetCDF restart and DCD extraction
 - developer-facing docs, tests, and phase reports
 
 ## Roadmap
@@ -35,11 +36,13 @@ Done. This phase added cranberry cg coarse-graining from atomistic inputs, cranb
 
 ### Phase 5: REMD
 
-Next. Add `remd` as an optional feature, with `openmmtools` kept out of the base install.
+Done. This phase added `cranberry remd` as an optional `openmmtools` feature, kept REMD out of the base install, added OpenMMTools-style no-overwrite behavior, NetCDF restart/provenance metadata, extra starting structures, interval controls, and `remd-extract` DCD translation by replica or by thermodynamic temperature.
 
-### Phase 6: Advanced Extras
+### Phase 6: PBC And Melting Workflows
 
-After the core workflows are stable. Add optional JAX, training, and PySAGES/enhanced sampling support.
+Next. Make periodic boundary condition behavior explicit and correct, with double-stranded melting/REMD as the primary use case. Single-chain runs should remain nonperiodic by default. This phase should audit legacy PBC behavior, separate box metadata from force-periodic physics and trajectory wrapping, add explicit PBC configuration, port force-level periodic behavior carefully, and add focused CPU tests without making pre-commit slow.
+
+Advanced extras such as JAX, training, and PySAGES/enhanced sampling move after the PBC slice unless a specific dependency decision blocks PBC work.
 
 ### Phase 7: Hardening
 
@@ -60,6 +63,8 @@ The v1 release should provide:
 - canonical coarse-grained RNA input validation
 - preparation/coarse-graining workflow
 - basic MD
+- optional REMD
+- explicit PBC support for workflows that need it, especially double-stranded melting
 - energy decomposition
 - restart support
 - CPU-first tests and CI

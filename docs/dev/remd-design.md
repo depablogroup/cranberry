@@ -1,10 +1,12 @@
 # Phase 5 REMD Design
 
-Status: draft
+Status: implemented and closed for the Phase 5 first slice
 
 ## Goal
 
 Add replica exchange MD as an optional `remd` extra without pulling `openmmtools` into the base install.
+
+Phase 5 is now closed. The remaining PBC/box-force correctness work is intentionally moved to Phase 6 because it affects MD and REMD force semantics, not only the REMD workflow.
 
 ## What Is Already Settled
 
@@ -152,3 +154,8 @@ That sequence keeps the design narrow and gives us a working contract before we 
 - REMD writes `args.json` for provenance, while `output.nc` remains the authoritative restart state.
 - Temperature-organized extraction writes `output_T0.dcd`, `output_T1.dcd`, and `output_temperature_labels.txt`.
 - PBC/box force behavior needs a separate audit phase before Cranberry claims full PBC support for MD or REMD. Current REMD can carry topology box vectors into sampler states, but force-level periodic correctness has not been audited.
+
+## Phase 5 Closeout
+
+- Closed after the first REMD slice: optional OpenMMTools dependency boundary, `cranberry remd`, `remd-extract`, NetCDF restart as the authoritative state, provenance `args.json`, no-overwrite default with explicit `--overwrite`, `--extra-start-pdb`, `--n-record`, `--n-analysis`, and DCD extraction by replica or by temperature.
+- PBC is explicitly not part of the Phase 5 closure. Phase 6 starts with PBC because double-stranded melting and REMD need correct box/force behavior, while ordinary single-chain runs usually remain nonperiodic.
