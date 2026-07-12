@@ -27,6 +27,7 @@
 <main>
   <h1>CRANBERRY Phase 6 PBC Initial Slice Report</h1>
   <p>This report covers the first Phase 6 implementation slice: explicit opt-in periodic boundary conditions for MD and REMD, plus legacy-compatible force periodicity. This does not close all melting workflow work; it establishes the force and box semantics needed for subsequent double-stranded tests.</p>
+  <p>Latest committed implementation: <code>9d6ce04 Improve REMD platform provenance and PBC validation</code>.</p>
 
   <h2>Legacy Audit Result</h2>
   <p>The legacy <code>OpenMM-CGRNA/core/openRNA.py</code> implementation toggles periodic methods for WCA, spline, Debye-Huckel, stacking, pairing, and RACER Buckingham nonbonded terms. It also calls <code>setUsesPeriodicBoundaryConditions(self.pbc)</code> for sugar-pucker custom compound/CV forces due to an OpenMMTools replica-exchange translation issue. Ordinary bond, angle, and dihedral terms do not opt into periodic distances.</p>
