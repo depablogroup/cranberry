@@ -25,10 +25,23 @@ def test_cli_remd_help(capsys):
     assert "--n-analysis" in captured.out
     assert "--extra-start-pdb" in captured.out
     assert "--write-dcd" in captured.out
+    assert "--periodic" in captured.out
+    assert "--box-padding" in captured.out
     assert "--overwrite" in captured.out
     assert "--by-replica" in captured.out
     assert "--by-temperature" in captured.out
 
+
+
+
+def test_cli_md_help(capsys):
+    with pytest.raises(SystemExit) as excinfo:
+        main(["md", "--help"])
+    assert excinfo.value.code == 0
+    captured = capsys.readouterr()
+    assert "--periodic" in captured.out
+    assert "--box-padding" in captured.out
+    assert "--enforce-periodic-output" in captured.out
 
 def test_cli_inspect_summary(capsys):
     assert main(["inspect"]) == 0
@@ -106,6 +119,8 @@ def test_cli_md_smoke(tmp_path, monkeypatch, capsys):
     assert "temperature=298.0 K" in captured.out
     assert "salt=150.0 mM" in captured.out
     assert "timestep=5.0 fs" in captured.out
+    assert "periodic=False" in captured.out
+    assert "enforce_periodic_output=False" in captured.out
     assert "platform=CPU" in captured.out
     assert "output directory:" in captured.out
     assert (tmp_path / "output.dcd").exists()

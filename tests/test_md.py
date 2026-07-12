@@ -9,6 +9,45 @@ from cranberry.md import calculate_langevin_friction, create_simulation, run_md
 from cranberry.validation import validate_canonical_pdb
 
 
+
+
+def _force_by_name(system, name):
+    matches = [system.getForce(index) for index in range(system.getNumForces()) if system.getForce(index).getName() == name]
+    assert matches, f"missing force {name}"
+    return matches[0]
+
+
+def _forces_by_name(system, name):
+    return [system.getForce(index) for index in range(system.getNumForces()) if system.getForce(index).getName() == name]
+
+
+def test_create_system_periodic_switches_legacy_pbc_forces():
+    pdb = app.PDBFile(str(data_path("examples/2ntCG_cg_vs_conect.pdb")))
+    nonperiodic = CranberryForceField().createSystem(pdb.topology, positions=pdb.positions)
+
+    periodic_pdb = app.PDBFile(str(data_path("examples/2ntCG_cg_vs_conect.pdb")))
+    periodic = CranberryForceField().createSystem(periodic_pdb.topology, positions=periodic_pdb.positions, periodic=True)
+
+    for name in ["wca", "spline", "electrostatic"]:
+        assert _force_by_name(nonperiodic, name).getNonbondedMethod() == _force_by_name(nonperiodic, name).CutoffNonPeriodic
+        assert _force_by_name(periodic, name).getNonbondedMethod() == _force_by_name(periodic, name).CutoffPeriodic
+
+    for name in ["stacking35", "stacking55", "stacking33", "pairing"]:
+        assert _force_by_name(nonperiodic, name).getNonbondedMethod() == _force_by_name(nonperiodic, name).CutoffNonPeriodic
+        assert _force_by_name(periodic, name).getNonbondedMethod() == _force_by_name(periodic, name).CutoffPeriodic
+
+    assert all(not force.usesPeriodicBoundaryConditions() for force in _forces_by_name(nonperiodic, "pucker"))
+    assert all(force.usesPeriodicBoundaryConditions() for force in _forces_by_name(periodic, "pucker"))
+    assert not _force_by_name(periodic, "bond").usesPeriodicBoundaryConditions()
+    assert not _force_by_name(periodic, "angle").usesPeriodicBoundaryConditions()
+    assert not _force_by_name(periodic, "dihedral").usesPeriodicBoundaryConditions()
+
+
+def test_create_simulation_periodic_sets_box_and_positions():
+    simulation = create_simulation(data_path("examples/2ntCG_cg_vs_conect.pdb"), periodic=True, box_padding=3 * unit.nanometer, platform="CPU")
+    assert simulation.topology.getPeriodicBoxVectors() is not None
+    assert simulation.system.getDefaultPeriodicBoxVectors() is not None
+
 def test_langevin_friction_matches_legacy_formula():
     pdb = app.PDBFile(str(data_path("examples/2ntCG_cg_vs_conect.pdb")))
     system = CranberryForceField().createSystem(pdb.topology, positions=pdb.positions)
@@ -67,6 +106,9 @@ def test_run_md_writes_default_outputs(tmp_path):
     assert args["temperature_kelvin"] == pytest.approx(298)
     assert args["salt_millimolar"] == pytest.approx(150)
     assert args["timestep_femtosecond"] == pytest.approx(5)
+    assert args["periodic"] is False
+    assert args["box_padding_nanometer"] == pytest.approx(2.0)
+    assert args["enforce_periodic_output"] is False
 
     log_header = result.log_path.read_text().splitlines()[0]
     assert "Kinetic Energy" in log_header

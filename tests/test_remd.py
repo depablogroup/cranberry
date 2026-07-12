@@ -53,6 +53,8 @@ def test_run_remd_and_translate_real_openmmtools(tmp_path):
     assert args['checkpoint_interval'] == 1
     assert args['online_analysis_interval'] is None
     assert args['temperature_ladder_kelvin'] == [298.0, 318.0]
+    assert args['periodic'] is False
+    assert args['periodic_box_vectors_present'] is False
 
     output_dcds = translate_netcdf_to_dcd(
         result.output_netcdf_path,

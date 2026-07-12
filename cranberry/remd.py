@@ -10,7 +10,7 @@ import numpy as np
 import openmm as mm
 from openmm import app, unit
 
-from cranberry.forcefield import CranberryForceField, get_model_spec
+from cranberry.forcefield import CranberryForceField, get_model_spec, prepare_periodic_positions
 from cranberry.md import _present_force_group_names, _sha256, _write_args
 from cranberry.validation import validate_canonical_pdb
 
@@ -82,6 +82,8 @@ class RemdRunConfig:
     overwrite: bool = False
     write_dcd: bool = False
     dcd_mode: str = 'replica'
+    periodic: bool = False
+    box_padding_nanometer: float = 2.0
 
 
 @dataclass(frozen=True)
@@ -144,13 +146,17 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
         raise FileNotFoundError(f'REMD NetCDF restart not found: {output_netcdf_path}')
 
     pdb = app.PDBFile(str(config.pdb_path))
+    box_padding = config.box_padding_nanometer * unit.nanometer
+    positions = prepare_periodic_positions(pdb.topology, pdb.positions, box_padding) if config.periodic else pdb.positions
     forcefield = CranberryForceField(config.model)
     reference_temperature = explicit_temperatures[0] if explicit_temperatures is not None else ladder_spec.t_min
     system = forcefield.createSystem(
         pdb.topology,
-        positions=pdb.positions,
+        positions=positions,
         temperature=reference_temperature * unit.kelvin,
         salt_concentration=config.salt_concentration_millimolar * unit.millimolar,
+        periodic=config.periodic,
+        box_padding=box_padding,
     )
     openmmtools, mcmc, states, multistate = _load_openmmtools()
     move = mcmc.GHMCMove(timestep=config.timestep_femtosecond * unit.femtosecond, n_steps=config.swap_steps)
@@ -165,9 +171,10 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
         sampler = sampler_cls(**sampler_kwargs)
         reference_state = states.ThermodynamicState(system, temperature=reference_temperature * unit.kelvin)
         n_replicas = len(explicit_temperatures) if explicit_temperatures is not None else ladder_spec.n_replicas
-        start_positions = _initial_positions(pdb, config.extra_start_pdb)
+        start_positions = _initial_positions(pdb, positions, config.extra_start_pdb, periodic=config.periodic, box_padding=box_padding)
+        sampler_box_vectors = pdb.topology.getPeriodicBoxVectors() if config.periodic else None
         sampler_states = [
-            states.SamplerState(start_positions[index % len(start_positions)], box_vectors=pdb.topology.getPeriodicBoxVectors())
+            states.SamplerState(start_positions[index % len(start_positions)], box_vectors=sampler_box_vectors)
             for index in range(n_replicas)
         ]
         create_kwargs = _build_parallel_tempering_kwargs(ladder_spec, explicit_temperatures)
@@ -317,6 +324,8 @@ def build_remd_parser(subparsers, *, default_func) -> argparse.ArgumentParser:
     parser.add_argument('--extra-start-pdb', type=Path, default=None, help='additional canonical CG PDB whose coordinates seed alternating initial replicas')
     parser.add_argument('--salt', type=float, default=150.0, help='salt concentration in millimolar')
     parser.add_argument('--timestep', type=float, default=5.0, help='integration timestep in femtoseconds')
+    parser.add_argument('--periodic', action='store_true', help='enable explicit periodic boundary conditions with a generated cubic box')
+    parser.add_argument('--box-padding', type=float, default=2.0, help='periodic cubic box padding around the structure in nanometers')
     parser.add_argument('--platform', default='CPU', help="OpenMM platform name; use 'default' to let OpenMM choose")
     parser.add_argument('--restart-from', type=Path, default=None, help='OpenMMTools NetCDF storage to restart from')
     parser.add_argument('--overwrite', action='store_true', help='allow overwriting existing REMD NetCDF outputs; default is no-overwrite')
@@ -336,13 +345,14 @@ def _load_openmmtools():
     return openmmtools, mcmc, states, multistate
 
 
-def _initial_positions(pdb: app.PDBFile, extra_start_pdb: Path | None):
-    positions = [pdb.positions]
+def _initial_positions(pdb: app.PDBFile, primary_positions, extra_start_pdb: Path | None, *, periodic: bool, box_padding):
+    positions = [primary_positions]
     if extra_start_pdb is not None:
         extra_pdb = app.PDBFile(str(extra_start_pdb))
         if extra_pdb.topology.getNumAtoms() != pdb.topology.getNumAtoms():
             raise ValueError('extra-start-pdb must contain the same number of atoms as the primary PDB')
-        positions.append(extra_pdb.positions)
+        extra_positions = prepare_periodic_positions(extra_pdb.topology, extra_pdb.positions, box_padding) if periodic else extra_pdb.positions
+        positions.append(extra_positions)
     return positions
 
 
@@ -416,6 +426,8 @@ def _build_remd_args(
         'overwrite': bool(config.overwrite),
         'write_dcd': bool(config.write_dcd),
         'dcd_mode': config.dcd_mode,
+        'periodic': bool(config.periodic),
+        'box_padding_nanometer': float(config.box_padding_nanometer),
         'output_netcdf_path': str(output_netcdf_path),
         'output_dcd_path': _stringify_output_path(output_dcd_path),
         'output_dcd_manifest_path': str(output_dcd_manifest_path) if output_dcd_manifest_path is not None else None,
@@ -425,7 +437,7 @@ def _build_remd_args(
             'atoms': pdb.topology.getNumAtoms(),
             'bonds': sum(1 for _ in pdb.topology.bonds()),
         },
-        'periodic_box_vectors_present': box_vectors is not None,
+        'periodic_box_vectors_present': bool(config.periodic and box_vectors is not None),
         'force_groups': _present_force_group_names(system),
         'sampler': 'ParallelTemperingSampler',
         'mcmc_move': 'GHMCMove',

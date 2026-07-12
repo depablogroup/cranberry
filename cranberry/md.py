@@ -17,7 +17,7 @@ import openmm as mm
 from openmm import LangevinMiddleIntegrator, Platform, unit
 from openmm import app
 
-from cranberry.forcefield import FORCE_GROUP_IDS, CranberryForceField, default_model_name, get_model_spec
+from cranberry.forcefield import FORCE_GROUP_IDS, CranberryForceField, default_model_name, get_model_spec, prepare_periodic_positions
 from cranberry.pdbio import write_pdb_with_conect
 from cranberry.validation import validate_canonical_pdb
 
@@ -47,6 +47,8 @@ def create_simulation(
     timestep=5 * unit.femtosecond,
     platform: str | None = "CPU",
     restart_from: str | Path | None = None,
+    periodic: bool = False,
+    box_padding=2.0 * unit.nanometer,
 ) -> app.Simulation:
     """Create an OpenMM Simulation for a canonical CRANBERRY CG PDB."""
 
@@ -58,12 +60,15 @@ def create_simulation(
     salt_concentration = _as_quantity(salt_concentration, unit.millimolar)
 
     pdb = app.PDBFile(str(pdb_path))
+    positions = prepare_periodic_positions(pdb.topology, pdb.positions, box_padding) if periodic else pdb.positions
     forcefield = CranberryForceField(model)
     system = forcefield.createSystem(
         pdb.topology,
-        positions=pdb.positions,
+        positions=positions,
         temperature=temperature,
         salt_concentration=salt_concentration,
+        periodic=periodic,
+        box_padding=box_padding,
     )
     friction = calculate_langevin_friction(pdb.topology, system, temperature)
     integrator = LangevinMiddleIntegrator(temperature, friction, timestep)
@@ -72,7 +77,7 @@ def create_simulation(
         simulation = app.Simulation(pdb.topology, system, integrator)
     else:
         simulation = app.Simulation(pdb.topology, system, integrator, Platform.getPlatformByName(platform))
-    simulation.context.setPositions(pdb.positions)
+    simulation.context.setPositions(positions)
     if restart_from is None:
         simulation.context.setVelocitiesToTemperature(temperature)
     else:
@@ -98,6 +103,9 @@ def run_md(
     restart_from: str | Path | None = None,
     overwrite: bool = True,
     write_minimization_report: bool = False,
+    periodic: bool = False,
+    box_padding=2.0 * unit.nanometer,
+    enforce_periodic_output: bool = False,
 ) -> MDRunResult:
     """Run a short OpenMM-native CRANBERRY MD simulation."""
 
@@ -174,6 +182,9 @@ def run_md(
         detailed_append=detailed_append,
         overwrite=overwrite,
         write_minimization_report=write_minimization_report,
+        periodic=periodic,
+        box_padding=box_padding,
+        enforce_periodic_output=enforce_periodic_output,
     )
     if restart_from_path is not None:
         previous_args = _load_restart_args(result.args_path)
@@ -194,8 +205,10 @@ def run_md(
         timestep=timestep,
         platform=platform,
         restart_from=restart_from_path,
+        periodic=periodic,
+        box_padding=box_padding,
     )
-    simulation.reporters.append(app.DCDReporter(str(result.dcd_path), report_interval, append=dcd_append))
+    simulation.reporters.append(app.DCDReporter(str(result.dcd_path), report_interval, append=dcd_append, enforcePeriodicBox=enforce_periodic_output))
     simulation.reporters.append(
         app.StateDataReporter(
             str(result.log_path),
@@ -271,7 +284,7 @@ def _as_quantity(value, default_unit):
     return value * default_unit
 
 
-def _build_args(*, pdb_path, model, steps, report_interval, n_record, temperature, salt_concentration, timestep, platform, restart_from, append_outputs, dcd_append, log_append, detailed_append, overwrite, write_minimization_report):
+def _build_args(*, pdb_path, model, steps, report_interval, n_record, temperature, salt_concentration, timestep, platform, restart_from, append_outputs, dcd_append, log_append, detailed_append, overwrite, write_minimization_report, periodic, box_padding, enforce_periodic_output):
     pdb_path = Path(pdb_path)
     return {
         "schema_version": 1,
@@ -293,6 +306,9 @@ def _build_args(*, pdb_path, model, steps, report_interval, n_record, temperatur
         "detailed_append": bool(detailed_append),
         "overwrite": bool(overwrite),
         "write_minimization_report": bool(write_minimization_report),
+        "periodic": bool(periodic),
+        "box_padding_nanometer": float(_as_quantity(box_padding, unit.nanometer).value_in_unit(unit.nanometer)),
+        "enforce_periodic_output": bool(enforce_periodic_output),
         "cranberry_version": __version__,
         "openmm_version": getattr(mm, "__version__", None),
     }
@@ -323,7 +339,7 @@ def _load_restart_args(path: Path):
 
 
 def _check_restart_compatibility(previous_args: dict, run_args: dict, args_path: Path) -> None:
-    error_fields = ["run_kind", "pdb_sha256", "model", "temperature_kelvin", "salt_millimolar", "timestep_femtosecond"]
+    error_fields = ["run_kind", "pdb_sha256", "model", "temperature_kelvin", "salt_millimolar", "timestep_femtosecond", "periodic", "box_padding_nanometer", "enforce_periodic_output"]
     for field in error_fields:
         if previous_args.get(field) != run_args.get(field):
             raise ValueError(f"Restart compatibility check failed for {field} in {args_path}")

@@ -69,6 +69,9 @@ def build_parser() -> argparse.ArgumentParser:
     md_parser.add_argument("--temperature", type=float, default=298.0, help="temperature in kelvin")
     md_parser.add_argument("--salt", type=float, default=150.0, help="salt concentration in millimolar")
     md_parser.add_argument("--timestep", type=float, default=5.0, help="integration timestep in femtoseconds")
+    md_parser.add_argument("--periodic", action="store_true", help="enable explicit periodic boundary conditions with a generated cubic box")
+    md_parser.add_argument("--box-padding", type=float, default=2.0, help="periodic cubic box padding around the structure in nanometers")
+    md_parser.add_argument("--enforce-periodic-output", action="store_true", help="wrap MD DCD frames into the periodic box; force PBC remains controlled by --periodic")
     md_parser.add_argument("--n-record", type=int, default=1000, help="target number of trajectory/log records; report interval is derived as max(1, steps // n_record)")
     md_parser.add_argument("--write-minimization-report", action="store_true", help="write pre/post minimization energies to minimization_report.json")
     md_parser.add_argument("--platform", default="CPU", help="OpenMM platform name; use 'default' to let OpenMM choose")
@@ -221,6 +224,8 @@ def _remd(args: argparse.Namespace) -> int:
             overwrite=args.overwrite,
             write_dcd=args.write_dcd,
             dcd_mode=args.dcd_mode,
+            periodic=args.periodic,
+            box_padding_nanometer=args.box_padding,
         )
     )
     print(
@@ -269,6 +274,8 @@ args: argparse.Namespace, *, platform: str | None, report_interval: int | None =
         f"timestep={args.timestep:.1f} fs, "
         f"report_interval={report_interval if report_interval is not None else 'auto'}, "
         f"n_record={getattr(args, 'n_record', 'auto')}, "
+        f"periodic={getattr(args, 'periodic', False)}, "
+        f"enforce_periodic_output={getattr(args, 'enforce_periodic_output', False)}, "
         f"platform={effective_platform}"
     )
 
@@ -289,6 +296,9 @@ def _md(args: argparse.Namespace) -> int:
         restart_from=args.restart_from,
         overwrite=not args.no_overwrite,
         write_minimization_report=args.write_minimization_report,
+        periodic=args.periodic,
+        box_padding=args.box_padding * unit.nanometer,
+        enforce_periodic_output=args.enforce_periodic_output,
     )
     print(_runtime_settings_line(args, platform=platform, report_interval=result.report_interval))
     print(f"output directory: {result.output_dir}")

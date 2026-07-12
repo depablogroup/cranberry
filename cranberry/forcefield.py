@@ -125,6 +125,36 @@ class _TopologyData:
     real_or_cog_site_ids: set[int]
 
 
+def prepare_periodic_positions(topology: app.Topology, positions, box_padding=2.0 * unit.nanometer):
+    """Center positions in a generated cubic periodic box and attach it to topology."""
+
+    box_size, translation = _periodic_box_size_and_translation(positions, box_padding)
+    _set_cubic_box_vectors(topology, box_size)
+    return positions + translation
+
+
+def _configure_periodic_box(topology: app.Topology, positions, box_padding) -> None:
+    box_size, _translation = _periodic_box_size_and_translation(positions, box_padding)
+    _set_cubic_box_vectors(topology, box_size)
+
+
+def _periodic_box_size_and_translation(positions, box_padding):
+    padding = _as_quantity(box_padding, unit.nanometer).in_units_of(unit.nanometer)
+    coordinates = positions.value_in_unit(unit.nanometer)
+    span = np.max(coordinates, axis=0) - np.min(coordinates, axis=0)
+    box_size_nm = float(np.max(span)) + 2.0 * padding.value_in_unit(unit.nanometer)
+    if box_size_nm <= 0:
+        raise ValueError("periodic box size must be positive")
+    center_nm = np.mean(coordinates, axis=0)
+    translation_nm = -center_nm + box_size_nm / 2.0
+    return box_size_nm * unit.nanometer, translation_nm * unit.nanometer
+
+
+def _set_cubic_box_vectors(topology: app.Topology, box_size) -> None:
+    zero = 0.0 * unit.nanometer
+    topology.setPeriodicBoxVectors(((box_size, zero, zero), (zero, box_size, zero), (zero, zero, box_size)))
+
+
 class CranberryForceField:
     """OpenMM-style force-field object for the canonical CRANBERRY model."""
 
@@ -141,10 +171,15 @@ class CranberryForceField:
         temperature=298 * unit.kelvin,
         salt_concentration=150 * unit.millimolar,
         enabled_forces: Iterable[str] | None = None,
+        periodic: bool = False,
+        box_padding=2.0 * unit.nanometer,
     ) -> mm.System:
         """Create an OpenMM System from a canonical CRANBERRY CG topology."""
 
-        del positions  # reserved for future PBC construction; system creation is topology based.
+        if periodic:
+            if positions is None:
+                raise ValueError("positions are required when periodic=True")
+            _configure_periodic_box(topology, positions, box_padding)
         enabled = set(FORCE_GROUP_NAMES if enabled_forces is None else enabled_forces)
         unknown = enabled - set(FORCE_GROUP_NAMES)
         if unknown:
@@ -164,21 +199,21 @@ class CranberryForceField:
         if "dihedral" in enabled:
             dihedral_indices = self._add_dihedrals(system, data, sugar_indices, angle_indices_all)
         if "pucker" in enabled:
-            self._add_sugar_pucker(system, topology)
+            self._add_sugar_pucker(system, topology, periodic=periodic)
         if "stacking35" in enabled:
-            self._add_stacking(system, data, "35")
+            self._add_stacking(system, data, "35", periodic=periodic)
         if "stacking55" in enabled:
-            self._add_stacking(system, data, "55")
+            self._add_stacking(system, data, "55", periodic=periodic)
         if "stacking33" in enabled:
-            self._add_stacking(system, data, "33")
+            self._add_stacking(system, data, "33", periodic=periodic)
         if "pairing" in enabled:
-            self._add_pairing(system, data)
+            self._add_pairing(system, data, periodic=periodic)
         if "wca" in enabled:
-            self._add_wca(system, data)
+            self._add_wca(system, data, periodic=periodic)
         if "spline" in enabled:
-            self._add_spline(system, data, base_idx_lim=3)
+            self._add_spline(system, data, base_idx_lim=3, periodic=periodic)
         if "electrostatic" in enabled:
-            self._add_debye_huckel(system, data, temperature, salt_concentration)
+            self._add_debye_huckel(system, data, temperature, salt_concentration, periodic=periodic)
 
         return system
 
@@ -277,14 +312,14 @@ class CranberryForceField:
             system.addForce(force)
         return dihedral_indices
 
-    def _add_wca(self, system: mm.System, data: _TopologyData) -> None:
+    def _add_wca(self, system: mm.System, data: _TopologyData, *, periodic: bool) -> None:
         force = mm.CustomNonbondedForce(
             "(4*eps*((sig/r)^12-(sig/r)^6)+eps)*step(A*sig-r);A=2^(1/6);sig=0.5*(sig1+sig2)"
         )
         force.addPerParticleParameter("sig")
         force.addGlobalParameter("eps", 5 * unit.kilojoule_per_mole)
         force.setCutoffDistance(0.4 * unit.nanometer)
-        force.setNonbondedMethod(force.CutoffNonPeriodic)
+        force.setNonbondedMethod(force.CutoffPeriodic if periodic else force.CutoffNonPeriodic)
         wca = self._params["wca_6spn"]
         for name in data.atom_names:
             sigma = 0.3 if name in {"BC", "BN"} else float(wca[name])
@@ -295,7 +330,7 @@ class CranberryForceField:
         force.setName("wca")
         system.addForce(force)
 
-    def _add_spline(self, system: mm.System, data: _TopologyData, base_idx_lim: int) -> None:
+    def _add_spline(self, system: mm.System, data: _TopologyData, base_idx_lim: int, *, periodic: bool) -> None:
         y_nodes = self._params["spline_y_nodes"]
         x_lim = self._params["spline_x_lim"]
         n_types = y_nodes.shape[0]
@@ -317,12 +352,12 @@ class CranberryForceField:
         force.addInteractionGroup(data.real_site_ids, data.real_site_ids)
         force.createExclusionsFromBonds(data.bonds, 3)
         force.setCutoffDistance(2 * unit.nanometer)
-        force.setNonbondedMethod(force.CutoffNonPeriodic)
+        force.setNonbondedMethod(force.CutoffPeriodic if periodic else force.CutoffNonPeriodic)
         force.setForceGroup(FORCE_GROUP_IDS["spline"])
         force.setName("spline")
         system.addForce(force)
 
-    def _add_debye_huckel(self, system: mm.System, data: _TopologyData, temperature, salt_concentration) -> None:
+    def _add_debye_huckel(self, system: mm.System, data: _TopologyData, temperature, salt_concentration, *, periodic: bool) -> None:
         temperature = _as_quantity(temperature, unit.kelvin)
         salt_concentration = _as_quantity(salt_concentration, unit.millimolar)
         e = 249.4 - 0.788 * (temperature / unit.kelvin) + 7.2e-4 * (temperature / unit.kelvin) ** 2
@@ -341,7 +376,7 @@ class CranberryForceField:
         force.addGlobalParameter("dh_length", debye_length)
         force.addGlobalParameter("denominator", denominator)
         force.setCutoffDistance(min(5 * unit.nanometer, 4 * debye_length))
-        force.setNonbondedMethod(force.CutoffNonPeriodic)
+        force.setNonbondedMethod(force.CutoffPeriodic if periodic else force.CutoffNonPeriodic)
         phosphate_ids = []
         for index, name in enumerate(data.atom_names):
             if name == "P":
@@ -355,7 +390,7 @@ class CranberryForceField:
         force.setName("electrostatic")
         system.addForce(force)
 
-    def _add_sugar_pucker(self, system: mm.System, topology: app.Topology) -> None:
+    def _add_sugar_pucker(self, system: mm.System, topology: app.Topology, *, periodic: bool) -> None:
         descriptors = [name for name in self._params["sugar_sigmoid"] if name != "intercept"]
         expression = self._sugar_pucker_expression(descriptors)
         force = mm.CustomCompoundBondForce(6, expression)
@@ -384,12 +419,12 @@ class CranberryForceField:
                     raise ValueError(f"Residue {residue.index} is missing P outside a 5-prime terminus")
         force.setForceGroup(FORCE_GROUP_IDS["pucker"])
         force.setName("pucker")
-        force.setUsesPeriodicBoundaryConditions(False)
+        force.setUsesPeriodicBoundaryConditions(periodic)
         system.addForce(force)
         if terminal_force.getNumBonds() > 0:
             terminal_force.setForceGroup(FORCE_GROUP_IDS["pucker"])
             terminal_force.setName("pucker")
-            terminal_force.setUsesPeriodicBoundaryConditions(False)
+            terminal_force.setUsesPeriodicBoundaryConditions(periodic)
             system.addForce(terminal_force)
 
     def _terminal_sugar_force(self, descriptors: list[str]) -> mm.CustomCompoundBondForce:
@@ -478,7 +513,7 @@ class CranberryForceField:
                 force.addGlobalParameter(f"b{i}_C2{suffix}", float(c2_params[0]))
                 force.addGlobalParameter(f"k{i}_C2{suffix}", float(c2_params[1]))
 
-    def _add_stacking(self, system: mm.System, data: _TopologyData, stacking_type: str) -> None:
+    def _add_stacking(self, system: mm.System, data: _TopologyData, stacking_type: str, *, periodic: bool) -> None:
         para = self._params[f"stacking{stacking_type}"]
         values = para["para"] * para["para0"]
         mats = [values[:, :, i].ravel().tolist() for i in range(7)]
@@ -507,7 +542,7 @@ class CranberryForceField:
         force.addPerAcceptorParameter("a_type")
         force.addPerDonorParameter("d_type")
         force.setCutoffDistance(0.7 * unit.nanometer)
-        force.setNonbondedMethod(force.CutoffNonPeriodic)
+        force.setNonbondedMethod(force.CutoffPeriodic if periodic else force.CutoffNonPeriodic)
         for i, (cog, normal) in enumerate(data.virtual_site_summaries):
             cog_idx, restype, *_ = cog
             normal_idx = normal[0]
@@ -519,7 +554,7 @@ class CranberryForceField:
         force.setName(group_name)
         system.addForce(force)
 
-    def _add_pairing(self, system: mm.System, data: _TopologyData, n_exclude_pairing: int = 1) -> None:
+    def _add_pairing(self, system: mm.System, data: _TopologyData, n_exclude_pairing: int = 1, *, periodic: bool) -> None:
         geom_pairs = self._params["pairing_geompairs"]
         para = self._params["pairing_para"] * self._params["pairing_para0"]
         expr = ""
@@ -545,7 +580,7 @@ class CranberryForceField:
         for parameter in ["d_type", "d_id", "d_chainid"]:
             force.addPerDonorParameter(parameter)
         force.setCutoffDistance(0.8 * unit.nanometer)
-        force.setNonbondedMethod(force.CutoffNonPeriodic)
+        force.setNonbondedMethod(force.CutoffPeriodic if periodic else force.CutoffNonPeriodic)
         for i, row in enumerate(para):
             names = ["Up", "r0_", "dr0_", "theta0_", "dtheta0_", "psi0_", "phi1_", "dphi1_", "phi2_", "dphi2_", "r_sens", "theta_sens", "phi_sens"]
             for name, value in zip(names, row):
