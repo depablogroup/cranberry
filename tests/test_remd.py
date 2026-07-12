@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 
 import pytest
 from openmm import app, unit
@@ -9,6 +10,7 @@ from cranberry.data import data_path
 from cranberry.remd import (
     RemdRunConfig,
     TemperatureLadderSpec,
+    _warn_cuda_online_analysis,
     run_remd,
     translate_netcdf_to_dcd,
 )
@@ -53,6 +55,8 @@ def test_run_remd_and_translate_real_openmmtools(tmp_path):
     assert args['checkpoint_interval'] == 1
     assert args['online_analysis_interval'] is None
     assert args['temperature_ladder_kelvin'] == [298.0, 318.0]
+    assert args['platform'] == 'CPU'
+    assert args['actual_platform'] == 'CPU'
     assert args['periodic'] is False
     assert args['periodic_box_vectors_present'] is False
 
@@ -117,9 +121,22 @@ def test_run_remd_accepts_extra_start_pdb_and_records_metadata(tmp_path):
     assert args['extra_start_pdb_sha256']
 
 
+def test_warn_cuda_online_analysis_reports_jax_gpu_risk():
+    with pytest.warns(RuntimeWarning, match='PyMBAR/JAX.*CUDA.*--n-analysis 0'):
+        _warn_cuda_online_analysis('CUDA', 1)
+
+
+def test_warn_cuda_online_analysis_ignores_disabled_analysis():
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter('always')
+        _warn_cuda_online_analysis('CUDA', None)
+    assert not captured
+
+
 @pytest.mark.remd
-def test_run_remd_records_online_analysis_interval(tmp_path):
+def test_run_remd_records_online_analysis_interval(tmp_path, monkeypatch):
     pdb = data_path('examples/2ntCG_cg_vs_conect.pdb')
+    monkeypatch.setenv('JAX_PLATFORM_NAME', 'cpu')
     result = run_remd(
         RemdRunConfig(
             pdb_path=pdb,
@@ -132,9 +149,11 @@ def test_run_remd_records_online_analysis_interval(tmp_path):
         )
     )
     assert result.online_analysis_interval == 1
+    assert result.jax_platform_name_env == 'cpu'
     args = json.loads(result.args_path.read_text())
     assert args['n_analysis'] == 2
     assert args['online_analysis_interval'] == 1
+    assert args['jax_platform_name_env'] == 'cpu'
 
 
 @pytest.mark.remd

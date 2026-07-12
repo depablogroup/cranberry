@@ -155,6 +155,37 @@ def _set_cubic_box_vectors(topology: app.Topology, box_size) -> None:
     topology.setPeriodicBoxVectors(((box_size, zero, zero), (zero, box_size, zero), (zero, zero, box_size)))
 
 
+def validate_periodic_box_cutoffs(system: mm.System) -> None:
+    """Fail early when a periodic cutoff is larger than half the box length."""
+
+    vectors = system.getDefaultPeriodicBoxVectors()
+    if vectors is None:
+        return
+    lengths_nm = []
+    for vector in vectors:
+        components_nm = vector.value_in_unit(unit.nanometer)
+        lengths_nm.append(float(np.sqrt(sum(component * component for component in components_nm))))
+    half_min_box_nm = 0.5 * min(lengths_nm)
+    for index in range(system.getNumForces()):
+        force = system.getForce(index)
+        get_cutoff = getattr(force, "getCutoffDistance", None)
+        get_method = getattr(force, "getNonbondedMethod", None)
+        if get_cutoff is None or get_method is None:
+            continue
+        method = get_method()
+        periodic_method = getattr(force, "CutoffPeriodic", None)
+        if periodic_method is None or method != periodic_method:
+            continue
+        cutoff_nm = get_cutoff().value_in_unit(unit.nanometer)
+        if cutoff_nm > half_min_box_nm:
+            name = force.getName() or type(force).__name__
+            raise ValueError(
+                "Periodic box is too small for force cutoff: "
+                f"force {name!r} cutoff is {cutoff_nm:.6g} nm, but half the smallest box length is "
+                f"{half_min_box_nm:.6g} nm. Increase --box-padding or use a larger periodic box."
+            )
+
+
 class CranberryForceField:
     """OpenMM-style force-field object for the canonical CRANBERRY model."""
 

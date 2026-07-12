@@ -12,6 +12,8 @@ cranberry remd cranberry/data/examples/2ntCG_cg_vs_conect.pdb   --steps 1000   -
 
 `--steps` is the total MD integration step count. Cranberry derives the OpenMMTools iteration count as `max(1, steps // swap_steps)`. `--n-record` controls the NetCDF checkpoint density by deriving a checkpoint interval in REMD iterations. `--n-analysis 0` disables OpenMMTools online analysis; values greater than zero derive an online-analysis interval.
 
+Online analysis is an OpenMMTools/PyMBAR convenience path, not part of the MD propagation itself. PyMBAR uses JAX, so online analysis can add noticeable overhead and may allocate GPU memory separately from OpenMM when JAX chooses a CUDA backend. For production CUDA REMD runs, use `--n-analysis 0` unless you specifically need online MBAR estimates during the run. If you want online analysis but do not want JAX competing with OpenMM on the GPU, launch with `JAX_PLATFORM_NAME=cpu`. Cranberry records `online_analysis_interval` and `jax_platform_name_env` in `args.json`; when online analysis is active, the CLI also prints the `JAX_PLATFORM_NAME` value or `unset`.
+
 Use `--extra-start-pdb` to provide an additional canonical CG PDB whose coordinates seed alternating initial replicas, useful for melting-style starts where the main PDB and an extra starting structure should both be represented.
 
 The primary REMD restart artifact is `output.nc`. Cranberry also writes `args.json` for provenance. To inspect the trajectory as DCD files:

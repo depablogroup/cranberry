@@ -44,7 +44,7 @@ Read these files before changing anything non-trivial:
 - Phase 4 coarse-graining and canonicalization slice, plus terminal phosphate insertion support, is complete.
 - The Phase 4 phosphate-placement heuristic is frozen as part of the v1 contract.
 - Phase 5 REMD is complete for the intended first slice: optional dependency boundary, CLI/API sketch, OpenMMTools NetCDF restart, provenance `args.json`, no-overwrite default, `--overwrite`, `--extra-start-pdb`, `--n-record`, `--n-analysis`, and `remd-extract`.
-- Phase 6 initial PBC slice is implemented: `periodic=True`, `--periodic`, generated cubic boxes with configurable padding, explicit REMD sampler-state box vectors, PBC provenance, separate MD DCD wrapping via `--enforce-periodic-output`, and force-level periodic switches matching the legacy audit.
+- Phase 6 initial PBC slice is implemented: `periodic=True`, `--periodic`, generated cubic boxes with configurable padding, explicit REMD sampler-state box vectors, PBC provenance, requested/actual platform provenance, separate MD DCD wrapping via `--enforce-periodic-output`, REMD OpenMMTools platform selection, early periodic cutoff-vs-box validation, and force-level periodic switches matching the legacy audit.
 - Developer reports for the main phase slices under docs/dev/progress/.
 - Code review reports should include the essential code path and algorithm snippets, not just high-level summaries.
 
@@ -68,4 +68,5 @@ This handoff is for a fresh Codex session. Re-read `AGENTS.md`, `docs/dev/progra
 - Preserve the OpenMM-style API and naming conventions.
 - Treat the fixed terminal-phosphate heuristic as part of the current model contract.
 - Keep tests CPU-first unless a specific task requires otherwise.
+- CUDA REMD with online analysis enabled (`--n-analysis` > 0) can fail in PyMBAR/JAX GPU allocation even when OpenMM CUDA is fine; use `--n-analysis 0` or force JAX to CPU for production CUDA runs unless online MBAR is explicitly needed.
 - Do not claim the full melting workflow complete until double-stranded fixtures, sampler/box state, restart behavior, and DCD output semantics are tested together.

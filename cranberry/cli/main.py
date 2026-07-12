@@ -236,13 +236,15 @@ def _remd(args: argparse.Namespace) -> int:
         f"iterations={result.iterations}, "
         f"swap_steps={result.swap_steps}, "
         f"checkpoint_interval={result.checkpoint_interval}, "
-        f"platform={platform if platform is not None else 'default'}"
+        f"platform={platform if platform is not None else 'default'}, "
+        f"actual_platform={result.actual_platform if result.actual_platform is not None else 'unknown'}"
     )
     print(f"output directory: {result.output_dir}")
     print(f"netcdf: {result.output_netcdf_path}")
     print(f"args: {result.args_path}")
     if result.online_analysis_interval is not None:
         print(f"online analysis interval: {result.online_analysis_interval}")
+        print(f"JAX_PLATFORM_NAME: {result.jax_platform_name_env if result.jax_platform_name_env is not None else 'unset'}")
     if result.output_dcd_path is not None:
         print(f"trajectory: {result.output_dcd_path}")
     if result.restart_from_path is not None:
@@ -263,7 +265,7 @@ def _remd_extract(args: argparse.Namespace) -> int:
 
 
 def _runtime_settings_line(
-args: argparse.Namespace, *, platform: str | None, report_interval: int | None = None) -> str:
+args: argparse.Namespace, *, platform: str | None, report_interval: int | None = None, actual_platform: str | None = None) -> str:
     model_spec = get_model_spec(args.model)
     effective_platform = platform if platform is not None else "default"
     return (
@@ -276,7 +278,8 @@ args: argparse.Namespace, *, platform: str | None, report_interval: int | None =
         f"n_record={getattr(args, 'n_record', 'auto')}, "
         f"periodic={getattr(args, 'periodic', False)}, "
         f"enforce_periodic_output={getattr(args, 'enforce_periodic_output', False)}, "
-        f"platform={effective_platform}"
+        f"platform={effective_platform}, "
+        f"actual_platform={actual_platform if actual_platform is not None else 'unknown'}"
     )
 
 
@@ -300,7 +303,7 @@ def _md(args: argparse.Namespace) -> int:
         box_padding=args.box_padding * unit.nanometer,
         enforce_periodic_output=args.enforce_periodic_output,
     )
-    print(_runtime_settings_line(args, platform=platform, report_interval=result.report_interval))
+    print(_runtime_settings_line(args, platform=platform, report_interval=result.report_interval, actual_platform=result.actual_platform))
     print(f"output directory: {result.output_dir}")
     print(f"trajectory: {result.dcd_path}")
     print(f"log: {result.log_path}")

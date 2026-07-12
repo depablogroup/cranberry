@@ -122,6 +122,7 @@ def test_cli_md_smoke(tmp_path, monkeypatch, capsys):
     assert "periodic=False" in captured.out
     assert "enforce_periodic_output=False" in captured.out
     assert "platform=CPU" in captured.out
+    assert "actual_platform=CPU" in captured.out
     assert "output directory:" in captured.out
     assert (tmp_path / "output.dcd").exists()
     assert (tmp_path / "log").exists()
@@ -132,12 +133,44 @@ def test_cli_md_smoke(tmp_path, monkeypatch, capsys):
 
 
 @pytest.mark.remd
+def test_cli_remd_default_ladder_smoke(tmp_path, monkeypatch):
+    path = data_path("examples/2ntCG_cg_vs_conect.pdb")
+    monkeypatch.chdir(tmp_path)
+    assert main(["remd", str(path), "--steps", "1", "--swap-steps", "1"]) == 0
+    assert (tmp_path / "output.nc").exists()
+    assert (tmp_path / "args.json").exists()
+
+
+@pytest.mark.remd
+def test_cli_remd_periodic_too_small_box_fails_before_openmmtools_context(tmp_path, monkeypatch):
+    path = data_path("examples/2ntCG_cg_vs_conect.pdb")
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValueError, match="Periodic box is too small.*electrostatic.*box-padding"):
+        main([
+            "remd",
+            str(path),
+            "--steps",
+            "1",
+            "--swap-steps",
+            "1",
+            "--temperature-ladder",
+            "298",
+            "318",
+            "--periodic",
+            "--box-padding",
+            "2",
+        ])
+
+
+@pytest.mark.remd
 def test_cli_remd_smoke_with_default_output_dir(tmp_path, monkeypatch, capsys):
     path = data_path("examples/2ntCG_cg_vs_conect.pdb")
     monkeypatch.chdir(tmp_path)
     assert main(["remd", str(path), "--steps", "1", "--temperature-ladder", "298", "318", "--swap-steps", "1"]) == 0
     captured = capsys.readouterr()
     assert "settings:" in captured.out
+    assert "platform=CPU" in captured.out
+    assert "actual_platform=CPU" in captured.out
     assert "netcdf:" in captured.out
     assert "args:" in captured.out
     assert (tmp_path / "output.nc").exists()

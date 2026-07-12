@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import os
+import warnings
 from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -10,7 +12,7 @@ import numpy as np
 import openmm as mm
 from openmm import app, unit
 
-from cranberry.forcefield import CranberryForceField, get_model_spec, prepare_periodic_positions
+from cranberry.forcefield import CranberryForceField, get_model_spec, prepare_periodic_positions, validate_periodic_box_cutoffs
 from cranberry.md import _present_force_group_names, _sha256, _write_args
 from cranberry.validation import validate_canonical_pdb
 
@@ -103,6 +105,7 @@ class RemdRunResult:
     checkpoint_interval: int
     online_analysis_interval: int | None
     actual_platform: str | None
+    jax_platform_name_env: str | None
 
 
 def run_remd(config: RemdRunConfig) -> RemdRunResult:
@@ -125,6 +128,7 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
     n_iterations = max(1, int(config.steps / config.swap_steps))
     checkpoint_interval = max(1, int(config.steps / (config.swap_steps * config.n_record)))
     online_analysis_interval = None if config.n_analysis == 0 else max(1, int(n_iterations / config.n_analysis))
+    jax_platform_name_env = os.environ.get('JAX_PLATFORM_NAME')
 
     ladder_spec = config.temperature_ladder
     ladder_spec.validate_defaults()
@@ -158,6 +162,7 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
         periodic=config.periodic,
         box_padding=box_padding,
     )
+    validate_periodic_box_cutoffs(system)
     openmmtools, mcmc, states, multistate = _load_openmmtools()
     move = mcmc.GHMCMove(timestep=config.timestep_femtosecond * unit.femtosecond, n_steps=config.swap_steps)
     sampler_cls = multistate.ParallelTemperingSampler
@@ -169,6 +174,7 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
         if online_analysis_interval is not None:
             sampler_kwargs['online_analysis_interval'] = online_analysis_interval
         sampler = sampler_cls(**sampler_kwargs)
+        _apply_sampler_platform(sampler, openmmtools, config.platform)
         reference_state = states.ThermodynamicState(system, temperature=reference_temperature * unit.kelvin)
         n_replicas = len(explicit_temperatures) if explicit_temperatures is not None else ladder_spec.n_replicas
         start_positions = _initial_positions(pdb, positions, config.extra_start_pdb, periodic=config.periodic, box_padding=box_padding)
@@ -180,6 +186,26 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
         create_kwargs = _build_parallel_tempering_kwargs(ladder_spec, explicit_temperatures)
         sampler.create(reference_state, sampler_states, reporter, **create_kwargs)
         actual_platform = _actual_sampler_platform(sampler, reference_state)
+        _warn_platform_mismatch(config.platform, actual_platform)
+        _warn_cuda_online_analysis(actual_platform, online_analysis_interval)
+        _write_args(
+            args_path,
+            _build_remd_args(
+                config=config,
+                model_name=get_model_spec(config.model).name,
+                output_netcdf_path=output_netcdf_path,
+                output_dcd_path=None,
+                output_dcd_manifest_path=None,
+                temperatures_kelvin=_expected_temperatures(ladder_spec),
+                n_iterations=n_iterations,
+                checkpoint_interval=checkpoint_interval,
+                online_analysis_interval=online_analysis_interval,
+                actual_platform=actual_platform,
+                openmmtools_version=getattr(openmmtools, '__version__', None),
+                pdb=pdb,
+                system=system,
+            ),
+        )
         sampler.minimize()
         sampler.run()
         stored_temperatures = _read_temperatures_from_reporter(reporter)
@@ -194,6 +220,29 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
                 f'expected {expected_temperatures}, found {stored_temperatures}'
             )
         sampler = sampler_cls.from_storage(str(output_netcdf_path))
+        _apply_sampler_platform(sampler, openmmtools, config.platform)
+        reference_state = states.ThermodynamicState(system, temperature=stored_temperatures[0] * unit.kelvin)
+        actual_platform = _actual_sampler_platform(sampler, reference_state)
+        _warn_platform_mismatch(config.platform, actual_platform)
+        _warn_cuda_online_analysis(actual_platform, online_analysis_interval)
+        _write_args(
+            args_path,
+            _build_remd_args(
+                config=config,
+                model_name=get_model_spec(config.model).name,
+                output_netcdf_path=output_netcdf_path,
+                output_dcd_path=None,
+                output_dcd_manifest_path=None,
+                temperatures_kelvin=stored_temperatures,
+                n_iterations=n_iterations,
+                checkpoint_interval=checkpoint_interval,
+                online_analysis_interval=online_analysis_interval,
+                actual_platform=actual_platform,
+                openmmtools_version=getattr(openmmtools, '__version__', None),
+                pdb=pdb,
+                system=system,
+            ),
+        )
         sampler.extend(n_iterations)
         _close_if_present(reporter)
 
@@ -210,24 +259,25 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
         if config.dcd_mode == 'temperature':
             output_dcd_manifest_path = output_dir / 'output_temperature_labels.txt'
 
-    _write_args(
-        args_path,
-        _build_remd_args(
-            config=config,
-            model_name=get_model_spec(config.model).name,
-            output_netcdf_path=output_netcdf_path,
-            output_dcd_path=output_dcd_path,
-            output_dcd_manifest_path=output_dcd_manifest_path,
-            temperatures_kelvin=stored_temperatures,
-            n_iterations=n_iterations,
-            checkpoint_interval=checkpoint_interval,
-            online_analysis_interval=online_analysis_interval,
-            actual_platform=actual_platform,
-            openmmtools_version=getattr(openmmtools, '__version__', None),
-            pdb=pdb,
-            system=system,
-        ),
-    )
+    if output_dcd_path is not None or output_dcd_manifest_path is not None:
+        _write_args(
+            args_path,
+            _build_remd_args(
+                config=config,
+                model_name=get_model_spec(config.model).name,
+                output_netcdf_path=output_netcdf_path,
+                output_dcd_path=output_dcd_path,
+                output_dcd_manifest_path=output_dcd_manifest_path,
+                temperatures_kelvin=stored_temperatures,
+                n_iterations=n_iterations,
+                checkpoint_interval=checkpoint_interval,
+                online_analysis_interval=online_analysis_interval,
+                actual_platform=actual_platform,
+                openmmtools_version=getattr(openmmtools, '__version__', None),
+                pdb=pdb,
+                system=system,
+            ),
+        )
 
     _close_if_present(sampler)
 
@@ -245,6 +295,7 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
         checkpoint_interval=checkpoint_interval,
         online_analysis_interval=online_analysis_interval,
         actual_platform=actual_platform,
+        jax_platform_name_env=jax_platform_name_env,
     )
 
 
@@ -356,6 +407,35 @@ def _initial_positions(pdb: app.PDBFile, primary_positions, extra_start_pdb: Pat
     return positions
 
 
+def _warn_platform_mismatch(requested_platform: str | None, actual_platform: str | None) -> None:
+    if requested_platform is None or actual_platform is None:
+        return
+    if requested_platform != actual_platform:
+        warnings.warn(
+            f"Requested OpenMM platform {requested_platform!r}, but actual platform is {actual_platform!r}.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+
+def _apply_sampler_platform(sampler, openmmtools, platform: str | None) -> None:
+    if platform is None:
+        return
+    platform_obj = mm.Platform.getPlatformByName(platform)
+    sampler.energy_context_cache = openmmtools.cache.ContextCache(platform=platform_obj)
+
+
+def _warn_cuda_online_analysis(actual_platform: str | None, online_analysis_interval: int | None) -> None:
+    if online_analysis_interval is None or actual_platform != 'CUDA':
+        return
+    warnings.warn(
+        'REMD online analysis uses PyMBAR/JAX, which may allocate CUDA GPU memory separately from OpenMM. '
+        'If this run fails with a JAX CUDA out-of-memory error, use --n-analysis 0 or force JAX to CPU.',
+        RuntimeWarning,
+        stacklevel=2,
+    )
+
+
 def _actual_sampler_platform(sampler, reference_state) -> str | None:
     try:
         context, _integrator = sampler.energy_context_cache.get_context(reference_state)
@@ -412,6 +492,7 @@ def _build_remd_args(
         'checkpoint_interval': int(checkpoint_interval),
         'n_analysis': int(config.n_analysis),
         'online_analysis_interval': online_analysis_interval,
+        'jax_platform_name_env': os.environ.get('JAX_PLATFORM_NAME'),
         'temperature_ladder_kelvin': [float(temperature) for temperature in temperatures_kelvin],
         'temperature_ladder_input_kelvin': list(explicit_temperatures) if explicit_temperatures is not None else None,
         't_min_kelvin': float(ladder_spec.t_min),
@@ -460,13 +541,12 @@ def _expected_temperatures(ladder_spec: TemperatureLadderSpec) -> tuple[float, .
         return ladder_spec.resolve() or ()
     if ladder_spec.n_replicas == 1:
         return (float(ladder_spec.t_min),)
-    temperature_unit = unit.kelvin
     temperatures = np.logspace(
-        np.log10(ladder_spec.t_min / temperature_unit),
-        np.log10(ladder_spec.t_max / temperature_unit),
+        np.log10(float(ladder_spec.t_min)),
+        np.log10(float(ladder_spec.t_max)),
         num=ladder_spec.n_replicas,
-    ) * temperature_unit
-    return tuple(float(temperature.value_in_unit(unit.kelvin)) for temperature in temperatures)
+    )
+    return tuple(float(temperature) for temperature in temperatures)
 
 
 def _add_dcd_mode_options(parser: argparse.ArgumentParser) -> None:

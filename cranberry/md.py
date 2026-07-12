@@ -17,7 +17,7 @@ import openmm as mm
 from openmm import LangevinMiddleIntegrator, Platform, unit
 from openmm import app
 
-from cranberry.forcefield import FORCE_GROUP_IDS, CranberryForceField, default_model_name, get_model_spec, prepare_periodic_positions
+from cranberry.forcefield import FORCE_GROUP_IDS, CranberryForceField, default_model_name, get_model_spec, prepare_periodic_positions, validate_periodic_box_cutoffs
 from cranberry.pdbio import write_pdb_with_conect
 from cranberry.validation import validate_canonical_pdb
 
@@ -36,6 +36,7 @@ class MDRunResult:
     report_interval: int
     n_record: int
     minimization_report_path: Path | None
+    actual_platform: str | None
 
 
 def create_simulation(
@@ -70,6 +71,7 @@ def create_simulation(
         periodic=periodic,
         box_padding=box_padding,
     )
+    validate_periodic_box_cutoffs(system)
     friction = calculate_langevin_friction(pdb.topology, system, temperature)
     integrator = LangevinMiddleIntegrator(temperature, friction, timestep)
 
@@ -136,6 +138,7 @@ def run_md(
         report_interval=report_interval,
         n_record=n_record,
         minimization_report_path=(output_dir / "minimization_report.json") if write_minimization_report else None,
+        actual_platform=None,
     )
     append_outputs = restart_from_path is not None
     dcd_append = append_outputs and result.dcd_path.exists()
@@ -185,6 +188,7 @@ def run_md(
         periodic=periodic,
         box_padding=box_padding,
         enforce_periodic_output=enforce_periodic_output,
+        actual_platform=None,
     )
     if restart_from_path is not None:
         previous_args = _load_restart_args(result.args_path)
@@ -208,6 +212,25 @@ def run_md(
         periodic=periodic,
         box_padding=box_padding,
     )
+    actual_platform = simulation.context.getPlatform().getName()
+    _warn_platform_mismatch(platform, actual_platform)
+    run_args["actual_platform"] = actual_platform
+    result = MDRunResult(
+        output_dir=result.output_dir,
+        dcd_path=result.dcd_path,
+        log_path=result.log_path,
+        detailed_log_path=result.detailed_log_path,
+        args_path=result.args_path,
+        checkpoint_path=result.checkpoint_path,
+        final_pdb_path=result.final_pdb_path,
+        restart_from_path=result.restart_from_path,
+        steps=result.steps,
+        report_interval=result.report_interval,
+        n_record=result.n_record,
+        minimization_report_path=result.minimization_report_path,
+        actual_platform=actual_platform,
+    )
+    _write_args(result.args_path, run_args)
     simulation.reporters.append(app.DCDReporter(str(result.dcd_path), report_interval, append=dcd_append, enforcePeriodicBox=enforce_periodic_output))
     simulation.reporters.append(
         app.StateDataReporter(
@@ -236,7 +259,6 @@ def run_md(
         f"after={minimization_summary['after_kj_per_mol']:.8f} kJ/mol"
     )
 
-    _write_args(result.args_path, run_args)
     simulation.step(steps)
     simulation.saveCheckpoint(str(result.checkpoint_path))
     simulation.context.computeVirtualSites()
@@ -249,6 +271,17 @@ def run_md(
             close()
     return result
 
+
+
+def _warn_platform_mismatch(requested_platform: str | None, actual_platform: str | None) -> None:
+    if requested_platform is None or actual_platform is None:
+        return
+    if requested_platform != actual_platform:
+        warnings.warn(
+            f"Requested OpenMM platform {requested_platform!r}, but actual platform is {actual_platform!r}.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
 
 def _minimize_and_report(simulation: app.Simulation, report_path: Path | None) -> dict[str, object]:
@@ -284,7 +317,7 @@ def _as_quantity(value, default_unit):
     return value * default_unit
 
 
-def _build_args(*, pdb_path, model, steps, report_interval, n_record, temperature, salt_concentration, timestep, platform, restart_from, append_outputs, dcd_append, log_append, detailed_append, overwrite, write_minimization_report, periodic, box_padding, enforce_periodic_output):
+def _build_args(*, pdb_path, model, steps, report_interval, n_record, temperature, salt_concentration, timestep, platform, restart_from, append_outputs, dcd_append, log_append, detailed_append, overwrite, write_minimization_report, periodic, box_padding, enforce_periodic_output, actual_platform):
     pdb_path = Path(pdb_path)
     return {
         "schema_version": 1,
@@ -299,6 +332,7 @@ def _build_args(*, pdb_path, model, steps, report_interval, n_record, temperatur
         "salt_millimolar": float(_as_quantity(salt_concentration, unit.millimolar).value_in_unit(unit.millimolar)),
         "timestep_femtosecond": float(_as_quantity(timestep, unit.femtosecond).value_in_unit(unit.femtosecond)),
         "platform": platform,
+        "actual_platform": actual_platform,
         "restart_from": str(restart_from) if restart_from is not None else None,
         "append_outputs": bool(append_outputs),
         "dcd_append": bool(dcd_append),

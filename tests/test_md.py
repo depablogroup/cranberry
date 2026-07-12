@@ -4,7 +4,7 @@ import pytest
 from openmm import app, unit
 
 from cranberry.data import data_path
-from cranberry.forcefield import CranberryForceField
+from cranberry.forcefield import CranberryForceField, validate_periodic_box_cutoffs
 from cranberry.md import calculate_langevin_friction, create_simulation, run_md
 from cranberry.validation import validate_canonical_pdb
 
@@ -41,6 +41,18 @@ def test_create_system_periodic_switches_legacy_pbc_forces():
     assert not _force_by_name(periodic, "bond").usesPeriodicBoundaryConditions()
     assert not _force_by_name(periodic, "angle").usesPeriodicBoundaryConditions()
     assert not _force_by_name(periodic, "dihedral").usesPeriodicBoundaryConditions()
+
+
+def test_periodic_box_cutoff_validation_rejects_too_small_box():
+    pdb = app.PDBFile(str(data_path("examples/2ntCG_cg_vs_conect.pdb")))
+    system = CranberryForceField().createSystem(
+        pdb.topology,
+        positions=pdb.positions,
+        periodic=True,
+        box_padding=2 * unit.nanometer,
+    )
+    with pytest.raises(ValueError, match="Periodic box is too small.*electrostatic.*box-padding"):
+        validate_periodic_box_cutoffs(system)
 
 
 def test_create_simulation_periodic_sets_box_and_positions():
@@ -106,6 +118,8 @@ def test_run_md_writes_default_outputs(tmp_path):
     assert args["temperature_kelvin"] == pytest.approx(298)
     assert args["salt_millimolar"] == pytest.approx(150)
     assert args["timestep_femtosecond"] == pytest.approx(5)
+    assert args["platform"] == "CPU"
+    assert args["actual_platform"] == "CPU"
     assert args["periodic"] is False
     assert args["box_padding_nanometer"] == pytest.approx(2.0)
     assert args["enforce_periodic_output"] is False

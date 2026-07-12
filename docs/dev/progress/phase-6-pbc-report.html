@@ -37,8 +37,11 @@
     <li>Added <code>cranberry md --periodic --box-padding</code> and <code>cranberry remd --periodic --box-padding</code>.</li>
     <li>Generated cubic boxes are explicit and centered from coordinates via <code>prepare_periodic_positions</code>.</li>
     <li>REMD sampler states only receive box vectors when <code>periodic=True</code>; PDB <code>CRYST1</code> is no longer enough to infer PBC.</li>
-    <li>MD/REMD provenance now records <code>periodic</code> and <code>box_padding_nanometer</code>; MD also records <code>enforce_periodic_output</code>. The default box padding is 2.0 nm.</li>
+    <li>MD/REMD provenance now records requested <code>platform</code>, <code>actual_platform</code>, <code>periodic</code>, and <code>box_padding_nanometer</code>; MD also records <code>enforce_periodic_output</code>. The default box padding is 2.0 nm.</li>
       <li>MD DCD wrapping is separate from force PBC: <code>--enforce-periodic-output</code> defaults off.</li>
+    <li>MD and REMD write <code>args.json</code> after actual platform selection and before minimization/sampling; REMD <code>--platform</code> now configures the OpenMMTools context cache.</li>
+    <li>Periodic systems now validate force cutoffs against half the smallest box length before OpenMMTools context creation, so tiny boxes fail with an actionable <code>--box-padding</code> error.</li>
+    <li>CUDA REMD warns when online PyMBAR/JAX analysis is enabled because JAX may allocate GPU memory independently of OpenMM; <code>--n-analysis 0</code> avoids that analysis path, and <code>JAX_PLATFORM_NAME=cpu</code> keeps online analysis off the GPU.</li>
   </ul>
 
   <h2>Key Code Paths</h2>
@@ -74,8 +77,9 @@ states.SamplerState(start_positions[i], box_vectors=sampler_box_vectors)</code><
     <thead><tr><th>Check</th><th>Status</th><th>Notes</th></tr></thead>
     <tbody>
       <tr><td><code>python -m py_compile cranberry/forcefield.py cranberry/md.py cranberry/remd.py cranberry/cli/main.py</code></td><td class="ok">passed</td><td>Syntax check after API/CLI/dataclass edits.</td></tr>
-      <tr><td><code>conda run -n cranberry-dev python -m pytest -q tests/test_md.py tests/test_cli.py tests/test_remd.py</code></td><td class="ok">passed</td><td>36 passed in 100.81 s; one existing NumPy ABI warning.</td></tr>
-      <tr><td><code>conda run -n cranberry-dev python -m pytest -q</code></td><td class="ok">passed</td><td>54 passed in 113.27 s; one existing NumPy ABI warning.</td></tr>
+      <tr><td><code>conda run -n cranberry-dev python -m pytest -q tests/test_md.py tests/test_cli.py tests/test_remd.py</code></td><td class="ok">passed</td><td>36 passed in 162.33 s; one existing NumPy ABI warning.</td></tr>
+      <tr><td><code>conda run -n cranberry-dev python -m pytest -q tests/test_md.py tests/test_remd.py tests/test_cli.py</code></td><td class="ok">passed</td><td>41 passed in 169.74 s; one existing NumPy ABI warning.</td></tr>
+      <tr><td><code>conda run -n cranberry-dev python -m pytest -q</code></td><td class="ok">passed</td><td>59 passed in 188.10 s; one existing NumPy ABI warning.</td></tr>
     </tbody>
   </table>
 

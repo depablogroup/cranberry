@@ -221,6 +221,8 @@ During migration, use `CRANBERRY_workshop/cranberry-workshop-919771f4-gpu/` as t
 
 ## Documentation
 
+The top-level README should include the canonical Cranberry citation before public v1, alongside the OpenMM/openmmtools citations where relevant.
+
 Use Markdown-first docs that can be built into a Sphinx website:
 
 ```text
