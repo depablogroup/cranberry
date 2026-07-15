@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>MD Log Progress Option Review</title></head>
+<body>
+  <h1>MD Log Progress Option Review</h1>
+  <p>Developer review note for adding an opt-in OpenMM progress column to Cranberry MD logs.</p>
+  <h2>Code changes</h2>
+  <ul>
+    <li>Added <code>run_md(..., log_progress=False)</code> and forwarded it to OpenMM <code>StateDataReporter(progress=...)</code>.</li>
+    <li>Recorded <code>log_progress</code> in <code>args.json</code> provenance.</li>
+    <li>Included <code>log_progress</code> in restart compatibility checks because appending to a log with a different column layout would corrupt the CSV-like output contract.</li>
+    <li>Added CLI flag <code>cranberry md --log-progress</code>.</li>
+    <li>Updated public output/tutorial docs to describe the optional <code>Progress (%)</code> log column.</li>
+  </ul>
+  <h2>Validation</h2>
+  <ul>
+    <li><code>python -m pytest -q tests/test_md.py::test_run_md_can_include_log_progress tests/test_cli.py::test_cli_md_help tests/test_cli.py::test_cli_md_log_progress_option</code> passed: 3 tests in 13.27 s.</li>
+    <li><code>python -m pytest -q tests/test_md.py tests/test_cli.py</code> was attempted. MD and CLI-focused tests ran, but REMD tests failed in this environment because <code>openmmtools</code> is not installed. The command also surfaced and the patch fixed the argparse percent escaping and missing test import issues.</li>
+  </ul>
+  <h2>Risks</h2>
+  <ul>
+    <li>The new option changes the standard <code>log</code> column set only when explicitly requested, preserving default output compatibility.</li>
+    <li>Restart compatibility now rejects mismatched <code>log_progress</code> settings to avoid appending rows with incompatible headers.</li>
+  </ul>
+</body>
+</html>

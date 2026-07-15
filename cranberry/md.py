@@ -108,6 +108,7 @@ def run_md(
     periodic: bool = False,
     box_padding=2.0 * unit.nanometer,
     enforce_periodic_output: bool = False,
+    log_progress: bool = False,
 ) -> MDRunResult:
     """Run a short OpenMM-native CRANBERRY MD simulation."""
 
@@ -188,6 +189,7 @@ def run_md(
         periodic=periodic,
         box_padding=box_padding,
         enforce_periodic_output=enforce_periodic_output,
+        log_progress=log_progress,
         actual_platform=None,
     )
     if restart_from_path is not None:
@@ -242,6 +244,7 @@ def run_md(
             kineticEnergy=True,
             totalEnergy=True,
             temperature=True,
+            progress=log_progress,
             elapsedTime=True,
             speed=True,
             remainingTime=True,
@@ -317,7 +320,7 @@ def _as_quantity(value, default_unit):
     return value * default_unit
 
 
-def _build_args(*, pdb_path, model, steps, report_interval, n_record, temperature, salt_concentration, timestep, platform, restart_from, append_outputs, dcd_append, log_append, detailed_append, overwrite, write_minimization_report, periodic, box_padding, enforce_periodic_output, actual_platform):
+def _build_args(*, pdb_path, model, steps, report_interval, n_record, temperature, salt_concentration, timestep, platform, restart_from, append_outputs, dcd_append, log_append, detailed_append, overwrite, write_minimization_report, periodic, box_padding, enforce_periodic_output, log_progress, actual_platform):
     pdb_path = Path(pdb_path)
     return {
         "schema_version": 1,
@@ -343,6 +346,7 @@ def _build_args(*, pdb_path, model, steps, report_interval, n_record, temperatur
         "periodic": bool(periodic),
         "box_padding_nanometer": float(_as_quantity(box_padding, unit.nanometer).value_in_unit(unit.nanometer)),
         "enforce_periodic_output": bool(enforce_periodic_output),
+        "log_progress": bool(log_progress),
         "cranberry_version": __version__,
         "openmm_version": getattr(mm, "__version__", None),
     }
@@ -373,7 +377,7 @@ def _load_restart_args(path: Path):
 
 
 def _check_restart_compatibility(previous_args: dict, run_args: dict, args_path: Path) -> None:
-    error_fields = ["run_kind", "pdb_sha256", "model", "temperature_kelvin", "salt_millimolar", "timestep_femtosecond", "periodic", "box_padding_nanometer", "enforce_periodic_output"]
+    error_fields = ["run_kind", "pdb_sha256", "model", "temperature_kelvin", "salt_millimolar", "timestep_femtosecond", "periodic", "box_padding_nanometer", "enforce_periodic_output", "log_progress"]
     for field in error_fields:
         if previous_args.get(field) != run_args.get(field):
             raise ValueError(f"Restart compatibility check failed for {field} in {args_path}")

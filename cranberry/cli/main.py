@@ -72,6 +72,7 @@ def build_parser() -> argparse.ArgumentParser:
     md_parser.add_argument("--periodic", action="store_true", help="enable explicit periodic boundary conditions with a generated cubic box")
     md_parser.add_argument("--box-padding", type=float, default=2.0, help="periodic cubic box padding around the structure in nanometers")
     md_parser.add_argument("--enforce-periodic-output", action="store_true", help="wrap MD DCD frames into the periodic box; force PBC remains controlled by --periodic")
+    md_parser.add_argument("--log-progress", action="store_true", help="include OpenMM Progress (%%) in the MD log file")
     md_parser.add_argument("--n-record", type=int, default=1000, help="target number of trajectory/log records; report interval is derived as max(1, steps // n_record)")
     md_parser.add_argument("--write-minimization-report", action="store_true", help="write pre/post minimization energies to minimization_report.json")
     md_parser.add_argument("--platform", default="CPU", help="OpenMM platform name; use 'default' to let OpenMM choose")
@@ -302,6 +303,7 @@ def _md(args: argparse.Namespace) -> int:
         periodic=args.periodic,
         box_padding=args.box_padding * unit.nanometer,
         enforce_periodic_output=args.enforce_periodic_output,
+        log_progress=args.log_progress,
     )
     print(_runtime_settings_line(args, platform=platform, report_interval=result.report_interval, actual_platform=result.actual_platform))
     print(f"output directory: {result.output_dir}")

@@ -123,6 +123,7 @@ def test_run_md_writes_default_outputs(tmp_path):
     assert args["periodic"] is False
     assert args["box_padding_nanometer"] == pytest.approx(2.0)
     assert args["enforce_periodic_output"] is False
+    assert args["log_progress"] is False
 
     log_header = result.log_path.read_text().splitlines()[0]
     assert "Kinetic Energy" in log_header
@@ -135,6 +136,21 @@ def test_run_md_writes_default_outputs(tmp_path):
     assert len(detailed) == 2
     validate_canonical_pdb(result.final_pdb_path).raise_for_errors()
 
+
+
+def test_run_md_can_include_log_progress(tmp_path):
+    result = run_md(
+        data_path("examples/2ntCG_cg_vs_conect.pdb"),
+        steps=2,
+        report_interval=1,
+        output_dir=tmp_path,
+        platform="CPU",
+        log_progress=True,
+    )
+
+    log_lines = result.log_path.read_text().splitlines()
+    assert "Progress (%)" in log_lines[0]
+    assert json.loads(result.args_path.read_text())["log_progress"] is True
 
 
 def test_run_md_writes_minimization_report(tmp_path):
