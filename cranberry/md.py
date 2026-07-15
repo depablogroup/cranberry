@@ -108,7 +108,7 @@ def run_md(
     periodic: bool = False,
     box_padding=2.0 * unit.nanometer,
     enforce_periodic_output: bool = False,
-    log_progress: bool = False,
+    log_progress: bool = True,
 ) -> MDRunResult:
     """Run a short OpenMM-native CRANBERRY MD simulation."""
 

@@ -3,7 +3,7 @@
 `cranberry md` writes these files by default into `--output-dir`, which defaults to the current directory:
 
 - `output.dcd`: trajectory written by OpenMM `DCDReporter`
-- `log`: OpenMM state log with step, time, potential energy, kinetic energy, total energy, temperature, elapsed time, speed, and estimated remaining time. Pass `cranberry md --log-progress` to also include OpenMM `Progress (%)`.
+- `log`: OpenMM state log with OpenMM `Progress (%)`, step, time, potential energy, kinetic energy, total energy, temperature, elapsed time, speed, and estimated remaining time. Pass `cranberry md --no-log-progress` to omit OpenMM `Progress (%)`.
 - `detailed.log`: total potential energy plus named force-group components
 - `args.json`: machine-readable record of the MD command settings
 - `checkpoint.chk`: OpenMM checkpoint refreshed at each report interval and once more after a completed run

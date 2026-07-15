@@ -133,11 +133,11 @@ def test_cli_md_smoke(tmp_path, monkeypatch, capsys):
     assert (tmp_path / "final.pdb").exists()
 
 
-def test_cli_md_log_progress_option(tmp_path):
+def test_cli_md_no_log_progress_option(tmp_path):
     path = data_path("examples/2ntCG_cg_vs_conect.pdb")
-    assert main(["md", str(path), "--steps", "2", "--n-record", "2", "--output-dir", str(tmp_path), "--platform", "CPU", "--log-progress"]) == 0
-    assert "Progress (%)" in (tmp_path / "log").read_text().splitlines()[0]
-    assert json.loads((tmp_path / "args.json").read_text())["log_progress"] is True
+    assert main(["md", str(path), "--steps", "2", "--n-record", "2", "--output-dir", str(tmp_path), "--platform", "CPU", "--no-log-progress"]) == 0
+    assert "Progress (%)" not in (tmp_path / "log").read_text().splitlines()[0]
+    assert json.loads((tmp_path / "args.json").read_text())["log_progress"] is False
 
 
 @pytest.mark.remd
