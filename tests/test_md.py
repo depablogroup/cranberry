@@ -3,6 +3,7 @@ import json
 import pytest
 from openmm import app, unit
 
+import cranberry.md as md_module
 from cranberry.data import data_path
 from cranberry.forcefield import CranberryForceField, validate_periodic_box_cutoffs
 from cranberry.md import calculate_langevin_friction, create_simulation, run_md
@@ -59,6 +60,16 @@ def test_create_simulation_periodic_sets_box_and_positions():
     simulation = create_simulation(data_path("examples/2ntCG_cg_vs_conect.pdb"), periodic=True, box_padding=3 * unit.nanometer, platform="CPU")
     assert simulation.topology.getPeriodicBoxVectors() is not None
     assert simulation.system.getDefaultPeriodicBoxVectors() is not None
+
+
+def test_create_simulation_accepts_platform_properties():
+    simulation = create_simulation(
+        data_path("examples/2ntCG_cg_vs_conect.pdb"),
+        platform="CPU",
+        platform_properties={"Threads": "1"},
+    )
+    assert simulation.context.getPlatform().getName() == "CPU"
+
 
 def test_langevin_friction_matches_legacy_formula():
     pdb = app.PDBFile(str(data_path("examples/2ntCG_cg_vs_conect.pdb")))
@@ -119,7 +130,12 @@ def test_run_md_writes_default_outputs(tmp_path):
     assert args["salt_millimolar"] == pytest.approx(150)
     assert args["timestep_femtosecond"] == pytest.approx(5)
     assert args["platform"] == "CPU"
+    assert args["platform_properties"] is None
     assert args["actual_platform"] == "CPU"
+    assert "cuda_visible_devices" in args
+    assert "cuda_mps_pipe_directory" in args
+    assert "cuda_mps_log_directory" in args
+    assert "parent_cuda_visible_devices" in args
     assert args["periodic"] is False
     assert args["box_padding_nanometer"] == pytest.approx(2.0)
     assert args["enforce_periodic_output"] is False
@@ -195,9 +211,11 @@ def test_run_md_restart_warns_on_platform_args_mismatch(tmp_path):
     args_path = tmp_path / "args.json"
     args = json.loads(args_path.read_text())
     args["platform"] = "Reference"
+    args["platform_properties"] = {"Threads": "2"}
+    args["cuda_visible_devices"] = "old-gpu"
     args_path.write_text(json.dumps(args, indent=2, sort_keys=True) + "\n")
 
-    with pytest.warns(RuntimeWarning, match="platform"):
+    with pytest.warns(RuntimeWarning) as warning_record:
         run_md(
             pdb,
             steps=1,
@@ -205,7 +223,12 @@ def test_run_md_restart_warns_on_platform_args_mismatch(tmp_path):
             output_dir=tmp_path,
             restart_from=first.checkpoint_path,
             platform="CPU",
+            platform_properties={"Threads": "1"},
         )
+    warning_text = "\n".join(str(item.message) for item in warning_record)
+    assert "platform" in warning_text
+    assert "platform_properties" in warning_text
+    assert "cuda_visible_devices" in warning_text
 
 
 def test_run_md_restart_errors_on_corrupt_args_json(tmp_path):
@@ -250,6 +273,29 @@ def test_run_md_restarts_from_checkpoint_and_appends_outputs(tmp_path):
     log_lines = [line for line in second.log_path.read_text().splitlines() if not line.startswith("#")]
     assert [line.split(",", 1)[0] for line in log_lines] == ["1", "2"]
     assert second.dcd_path.stat().st_size > initial_dcd_size
+
+
+def test_run_md_restart_skips_minimization(tmp_path, monkeypatch):
+    pdb = data_path("examples/2ntCG_cg_vs_conect.pdb")
+    first = run_md(pdb, steps=1, report_interval=1, output_dir=tmp_path, platform="CPU")
+
+    def fail_minimization(*args, **kwargs):
+        raise AssertionError("restart should continue from checkpoint without minimization")
+
+    monkeypatch.setattr(md_module, "_minimize_and_report", fail_minimization)
+    second = run_md(
+        pdb,
+        steps=1,
+        report_interval=1,
+        output_dir=tmp_path,
+        restart_from=first.checkpoint_path,
+        platform="CPU",
+        write_minimization_report=True,
+    )
+
+    args = json.loads(second.args_path.read_text())
+    assert second.minimization_report_path is None
+    assert args["write_minimization_report"] is False
 
 
 def test_run_md_restart_missing_outputs_warns_and_creates_files(tmp_path):

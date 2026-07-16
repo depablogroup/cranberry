@@ -23,6 +23,7 @@ from ..md import run_md
 from ..cg import coarse_grain_structure
 from ..prepare import prepare_structure
 from ..remd import RemdRunConfig, TemperatureLadderSpec, _add_dcd_mode_options, build_remd_parser, run_remd, translate_netcdf_to_dcd
+from ..runtime import parse_platform_property, platform_properties_from_pairs
 from ..validation import validate_canonical_pdb
 
 _NOOP_PREPARE_NOTE = (
@@ -75,6 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
     md_parser.add_argument("--n-record", type=int, default=1000, help="target number of trajectory/log records; report interval is derived as max(1, steps // n_record)")
     md_parser.add_argument("--write-minimization-report", action="store_true", help="write pre/post minimization energies to minimization_report.json")
     md_parser.add_argument("--platform", default="CPU", help="OpenMM platform name; use 'default' to let OpenMM choose")
+    md_parser.add_argument("--platform-property", action="append", type=_platform_property_arg, default=None, metavar="KEY=VALUE", help="OpenMM platform property; repeat for multiple properties, e.g. Precision=mixed")
     md_parser.add_argument("--restart-from", type=Path, default=None, help="OpenMM checkpoint to restart from")
     md_parser.add_argument("--no-overwrite", action="store_true", help="fail if default MD output files already exist")
     md_parser.set_defaults(func=_md)
@@ -199,6 +201,7 @@ def _not_implemented(args: argparse.Namespace) -> int:
 
 def _remd(args: argparse.Namespace) -> int:
     platform = None if args.platform == "default" else args.platform
+    platform_properties = platform_properties_from_pairs(args.platform_property)
     temperatures = getattr(args, "temperature_ladder", None)
     ladder = TemperatureLadderSpec(
         temperatures=tuple(temperatures) if temperatures is not None else None,
@@ -219,6 +222,7 @@ def _remd(args: argparse.Namespace) -> int:
             salt_concentration_millimolar=args.salt,
             timestep_femtosecond=args.timestep,
             platform=platform,
+            platform_properties=platform_properties,
             restart_from=args.restart_from,
             extra_start_pdb=args.extra_start_pdb,
             overwrite=args.overwrite,
@@ -228,6 +232,8 @@ def _remd(args: argparse.Namespace) -> int:
             box_padding_nanometer=args.box_padding,
         )
     )
+    if not result.is_mpi_root:
+        return 0
     print(
         "settings: "
         f"model={args.model}, "
@@ -245,6 +251,8 @@ def _remd(args: argparse.Namespace) -> int:
     if result.online_analysis_interval is not None:
         print(f"online analysis interval: {result.online_analysis_interval}")
         print(f"JAX_PLATFORM_NAME: {result.jax_platform_name_env if result.jax_platform_name_env is not None else 'unset'}")
+        if result.jax_default_backend is not None:
+            print(f"JAX default backend: {result.jax_default_backend}")
     if result.output_dcd_path is not None:
         print(f"trajectory: {result.output_dcd_path}")
     if result.restart_from_path is not None:
@@ -285,6 +293,7 @@ args: argparse.Namespace, *, platform: str | None, report_interval: int | None =
 
 def _md(args: argparse.Namespace) -> int:
     platform = None if args.platform == "default" else args.platform
+    platform_properties = platform_properties_from_pairs(args.platform_property)
     result = run_md(
         args.pdb,
         steps=args.steps,
@@ -296,6 +305,7 @@ def _md(args: argparse.Namespace) -> int:
         report_interval=getattr(args, "report_interval", None),
         n_record=args.n_record,
         platform=platform,
+        platform_properties=platform_properties,
         restart_from=args.restart_from,
         overwrite=not args.no_overwrite,
         write_minimization_report=args.write_minimization_report,
@@ -315,6 +325,13 @@ def _md(args: argparse.Namespace) -> int:
     print(f"checkpoint: {result.checkpoint_path}")
     print(f"final pdb: {result.final_pdb_path}")
     return 0
+
+
+def _platform_property_arg(value: str) -> tuple[str, str]:
+    try:
+        return parse_platform_property(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def _energy(args: argparse.Namespace) -> int:

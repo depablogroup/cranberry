@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CRANBERRY Phase 6 MPS/MPI REMD Report</title>
+  <style>
+    :root { --ink:#17212b; --muted:#5d6975; --line:#d8e0e8; --soft:#f6f8fb; --code:#101820; --ok:#137348; --warn:#9a5b00; }
+    body { margin:0; color:var(--ink); font:15px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:white; }
+    main { max-width:1120px; margin:0 auto; padding:36px 28px 72px; }
+    h1 { margin:0 0 10px; font-size:32px; line-height:1.15; }
+    h2 { margin:32px 0 12px; padding-top:22px; border-top:1px solid var(--line); font-size:22px; }
+    h3 { margin:20px 0 8px; font-size:17px; }
+    p { margin:0 0 12px; color:var(--muted); }
+    code, pre { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace; }
+    pre { margin:10px 0 0; padding:13px 15px; overflow:auto; color:#edf5ff; background:var(--code); border-radius:8px; font-size:13px; }
+    table { width:100%; border-collapse:collapse; margin:12px 0 0; font-size:14px; }
+    th, td { border-bottom:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+    th { background:var(--soft); }
+    ul { margin:8px 0 0 20px; padding:0; }
+    li { margin:5px 0; }
+    .ok { color:var(--ok); font-weight:700; }
+    .warn { color:var(--warn); font-weight:700; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>CRANBERRY Phase 6 MPS/MPI REMD Report</h1>
+  <p>This report covers the MPS/MPI adaptation slice requested after comparing the cleaned Cranberry package with the legacy <code>04-cranberry/melting_v2_cedric</code> launch behavior. It also records the follow-up REMD restart work tracked in <a href="https://github.com/yihengwuKP/cranberry/issues/9">GitHub issue #9</a>.</p>
+
+  <h2>Implemented</h2>
+  <ul>
+    <li>Added repeatable <code>--platform-property KEY=VALUE</code> support to <code>cranberry md</code> and <code>cranberry remd</code>.</li>
+    <li>Threaded OpenMM platform properties through <code>create_simulation</code>, <code>run_md</code>, and the OpenMMTools REMD context cache.</li>
+    <li>Added runtime provenance for platform properties, <code>CUDA_VISIBLE_DEVICES</code>, CUDA MPS pipe/log directories, and parent GPU visibility.</li>
+    <li>Made Cranberry-owned REMD side effects rank-0-only when <code>mpiplus</code> detects MPI: output directory creation, output existence checks, <code>args.json</code> writes, DCD extraction, and CLI summaries.</li>
+    <li>Added serial/MPI metadata to REMD <code>args.json</code>, including detected rank/size and common OpenMPI, PMIx, Slurm, and launcher environment values.</li>
+    <li>Added optional JAX metadata capture when online analysis is enabled: JAX/JAXLIB versions, default backend, and device strings. JAX remains optional and is not imported when <code>--n-analysis 0</code>; detailed backend/device discovery is deferred until after the sampler run so it does not initialize JAX GPU memory before OpenMM starts.</li>
+    <li>Added cluster launch helpers under <code>scripts/hpc/</code> for REMD MPI+MPS and independent MD MPS packing.</li>
+    <li>Hardened <code>mpi_runtime_env.sh</code> for interactive Slurm shells by clearing stale PMI/PMIx/OMPI rank bootstrap variables before launching Cranberry's own <code>mpirun</code>.</li>
+    <li>Aligned the REMD MPI+MPS wrapper with legacy benchmark logging: <code>N_RECORD=10000</code> by default, worker output captured to <code>stdout.log</code>/<code>stderr.log</code>, and live <code>tee</code> streaming available only with <code>STREAM_LOG=1</code>.</li>
+    <li>Added wrapper diagnostics for CPU allocation and JAX backend: <code>launcher_env.txt</code> now records Slurm CPU fields and processor affinity, while <code>preflight.log</code> records OpenMMTools/mpi4py import status and the JAX backend/device list.</li>
+    <li>Added a wrapper warning when the detected CPU allocation is smaller than <code>N_MPI_RANKS</code>, because oversubscribing CPU cores can strongly affect MPS throughput.</li>
+    <li>Added <code>scripts/hpc/submit_cacag_5us_pbc_l40s.sh</code>, a self-submitting 5 us CACAG PBC production sbatch helper for the Torch L40S allocation. It uses a 47 h internal timeout inside a 48 h Slurm allocation and resubmits itself after timeout/kill exits until the NetCDF stored iteration reaches the 5 us target.</li>
+    <li>Made the production submitter resolve <code>CONDA_ENV=cranberry-dev</code> to <code>$HOME/.conda/envs/cranberry-dev</code> by default, prepend that environment's <code>bin</code> directory inside the batch job, pass the resolved Python through <code>PYTHON_BIN</code>, and run a submit-side preflight for <code>openmmtools</code>, <code>mpi4py</code>, and <code>netCDF4</code>.</li>
+    <li>Added optional <code>MAX_RESUBMITS</code> / <code>RESUBMIT_COUNT</code> controls so timeout/restart behavior can be tested with a short run without creating an unbounded resubmission loop.</li>
+    <li>Made the production helper log current and target progress in iterations, steps, ns, and us, plus the derived per-attempt checkpoint and analysis intervals. The restart branch now explicitly refuses to resubmit when the stored NetCDF iteration is at or above the target.</li>
+    <li>Changed the production submitter's default online-analysis cadence to mirror the old melting v2 <code>pt_online_analysis_interval=null</code> formula when <code>N_ANALYSIS</code> is unset. For the default 5 us production target this gives <code>target_analysis_interval=200</code> REMD iterations and <code>full_run_n_analysis=1000</code>, rather than only 10 analyses across the full run.</li>
+    <li>Added <code>scripts/hpc/submit_ggcGCAAgcc_5us_nopbc_l40s.sh</code>, a small no-PBC production wrapper that reuses the restart-tested L40S submitter while setting the <code>ggcGCAAgcc</code> canonical/extended seed PDBs, no-PBC mode, the melting v2 <code>310-410 K</code> temperature range, a distinct job name, and a distinct output directory.</li>
+    <li>Hardened REMD restart storage handling for <code>cranberry remd --restart-from</code>. The restart path now closes Cranberry's read-only validation reporter before sampler restoration, and MPI restarts use a Cranberry <code>_sampler_from_storage</code> helper that mirrors OpenMMTools restoration while inserting an MPI barrier before rank 0 opens the NetCDF reporter in append mode.</li>
+    <li>Removed the production submitter's special NetCDF-HDF exit-code-1 retry loop. Only timeout/kill exits <code>124</code> and <code>137</code> now trigger automatic resubmission; restart failures with exit code <code>1</code> fail visibly instead of waiting five minutes and retrying.</li>
+    <li>Updated REMD docs to distinguish the low-risk <code>--n-analysis 0</code> mode from the old melting-style JAX GPU online-analysis path.</li>
+  </ul>
+
+  <h2>REMD Restart Finding</h2>
+  <p>The production CACAG restart failed at <code>ParallelTemperingSampler.from_storage(...)</code> with <code>NetCDF: HDF error</code> while reopening <code>runs/cacag_pbc_5us_l40s_prod_analysis200/output.nc</code>. The same NetCDF opened successfully read-only with <code>netCDF4.Dataset</code>, and a disposable copy opened successfully through single-process OpenMMTools <code>from_storage</code>. This points away from simple file corruption and toward MPI restart-open ordering.</p>
+  <p>OpenMMTools <code>from_storage</code> opens the storage in read mode on all ranks, restores sampler state, closes the reporter, and then opens append mode on rank 0 with <code>sync_nodes=False</code>. On larger production files, rank 0 can reach append-open while another MPI rank is still reading or closing. The branch mitigation keeps non-MPI behavior delegated to OpenMMTools but uses a synchronized restore path under MPI: read/restore/close on all ranks, MPI barrier, then rank-0 append-open with <code>sync_nodes=True</code>.</p>
+  <p>The tiny 10-minute restart smoke and the later <code>ggcGCAAgcc</code> continuation do not disprove the race. The small smoke file likely restored fast enough on all ranks, and <code>ggcGCAAgcc</code> had earlier HDF restart failures before a later attempt progressed beyond iteration <code>39180</code>. Both behaviors are consistent with nondeterministic timing.</p>
+
+  <h2>Legacy Match Notes</h2>
+  <p>The old melting worker set <code>OPENMMTOOLS_ENABLE_MPI=1</code>, launched the same OpenMMTools parallel tempering code under MPI, started CUDA MPS, and mapped multiple local MPI ranks onto one or more GPUs. Cranberry now preserves that architecture through the standard <code>cranberry remd</code> command instead of adding a separate experimental REMD command.</p>
+  <p>The helper <code>scripts/hpc/run_cranberry_remd_mpi_mps.sh</code> defaults to <code>N_ANALYSIS=10</code>. For a 500000-step run with <code>SWAP_STEPS=5000</code>, this produces an online-analysis interval of 10, matching the legacy OpenMMTools automatic interval seen in the old melting runs. It does not force <code>JAX_PLATFORM_NAME=cpu</code>, so JAX can use its default backend when the GPU JAX build is loaded.</p>
+  <p>The legacy <code>melting_v2_cedric</code> 500000-step CACAG benchmark used <code>N_RECORD=10000</code> and printed <code>checkpoint interval is 1, online analysis interval is: 10</code>. A current 50000-step smoke run with <code>N_RECORD=10</code> produced <code>checkpoint_interval=5</code> and <code>N_ANALYSIS=0</code>, so it wrote less often than the legacy run. Logging/checkpoint volume is therefore unlikely to explain the observed throughput gap by itself, but the wrapper now defaults to the legacy logging shape for cleaner A/B timing.</p>
+  <p>The same legacy benchmark used <code>salt=1000</code>, <code>t_min=280</code>, <code>t_max=380</code>, <code>padding=2.0</code>, and an alternate extended starting PDB. The observed slow 50000-step Cranberry smoke run used <code>salt=150</code>, <code>t_min=298</code>, <code>t_max=600</code>, <code>padding=2.25</code>, and no alternate starting PDB. These physical/run-setup differences, especially the lower salt and larger validated electrostatic cutoff, are stronger throughput suspects than log volume.</p>
+  <p>The saved legacy GPU snapshot for <code>cacag_1gpu</code> shows an <code>NVIDIA L40S</code>. A later matched Cranberry run was started on an <code>NVIDIA H200</code> with MIG disabled and reported about 1.25-1.40 aggregate microseconds/day in <code>output_real_time_analysis.yaml</code> through iteration 40. Because online MBAR/JAX analysis was active, the next A/B should compare the same H200 allocation with <code>N_ANALYSIS=0</code> before attributing the difference solely to H200 versus L40S or CPU allocation.</p>
+  <p>A follow-up L40S run on <code>l40s_courant</code> reported GPU JAX in <code>preflight.log</code> and improved to about 1.75 aggregate microseconds/day through iteration 20, but the allocation exposed only <code>SLURM_CPUS_PER_TASK=4</code> with CPU affinity to four cores for <code>N_MPI_RANKS=8</code>. The legacy benchmark submitter used <code>CPUS_PER_TASK=32</code>. This CPU allocation difference is now the most concrete remaining explanation for the gap to the old 3.33 aggregate microseconds/day result.</p>
+  <p>The 5 us production helper treats <code>TARGET_STEPS=1000000000</code> and <code>SWAP_STEPS=5000</code> as <code>200000</code> target REMD iterations. Because Cranberry's current restart path calls OpenMMTools <code>extend(n_iterations)</code>, the helper reads <code>output.nc</code> before each attempt and launches only the remaining iterations. It preserves the full-run logging cadence by deriving per-attempt <code>N_RECORD</code> and <code>N_ANALYSIS</code> from the target checkpoint and online-analysis intervals.</p>
+  <p>For production runs with <code>N_ANALYSIS</code> unset, the target online-analysis interval follows the old OpenMM-CGRNA melting v2 default: <code>max(min(target_iterations / 10, 10 * target_checkpoint_interval), 1)</code>. With the default 5 us setup this evaluates to analysis every 200 REMD iterations, about 5 ns per replica, while <code>N_ANALYSIS=0</code> still disables online analysis explicitly.</p>
+  <p>The production helper now exports <code>CRANBERRY_REPO_ROOT</code>, <code>CRANBERRY_SUBMIT_SCRIPT</code>, and <code>CRANBERRY_REMD_HELPER</code> into each Slurm submission. This avoids resolving paths relative to Slurm's spooled script copy, which can live under scheduler-owned directories such as <code>/opt/slurm/data</code>.</p>
+  <p>The production helper prepares the Python environment inside each Slurm job instead of relying on the user's interactive shell activation state. By default it uses <code>$HOME/.conda/envs/cranberry-dev/bin/python</code>; <code>CONDA_ENV</code>, <code>CONDA_ENV_PATH</code>, and <code>PYTHON_BIN</code> remain overrideable for alternate environments.</p>
+  <p>The <code>ggcGCAAgcc</code> no-PBC production wrapper intentionally delegates to the same submitter rather than duplicating restart logic. It overrides <code>USE_PBC=0</code>, <code>T_MIN=310</code>, <code>T_MAX=410</code>, <code>JOB_NAME=ggcGCAAgcc_5us_nopbc</code>, <code>OUTPUT_DIR=runs/ggcGCAAgcc_nopbc_5us_l40s</code>, and the corresponding canonical/extended seed PDB paths.</p>
+
+  <h2>Key Code Paths</h2>
+  <h3>MD Platform Properties</h3>
+  <pre><code>simulation = app.Simulation(
+    pdb.topology,
+    system,
+    integrator,
+    Platform.getPlatformByName(platform),
+    platformProperties=platform_properties,
+)</code></pre>
+
+  <h3>REMD Context Cache</h3>
+  <pre><code>sampler.energy_context_cache = openmmtools.cache.ContextCache(
+    platform=platform_obj,
+    platform_properties=normalize_platform_properties(platform_properties),
+)</code></pre>
+
+  <h3>MPI Root-Only Side Effects</h3>
+  <pre><code>_mpi_run_single_node(mpiplus, mpi_runtime, _write_args, args_path, args)
+_mpi_run_single_node(..., _translate_netcdf_to_dcd, ..., broadcast_result=True)</code></pre>
+
+  <h3>MPI-Safe REMD Restart Open</h3>
+  <pre><code>reporter.open(mode='r')
+sampler = sampler_cls._instantiate_sampler_from_reporter(reporter)
+sampler._restore_sampler_from_reporter(reporter)
+reporter.close()
+
+_mpi_barrier(mpiplus, mpi_runtime)
+mpiplus.run_single_node(0, sampler._reporter.open, mode='a', sync_nodes=True)</code></pre>
+
+  <h2>Validation</h2>
+  <table>
+    <thead><tr><th>Check</th><th>Status</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>python -m py_compile cranberry/runtime.py cranberry/md.py cranberry/remd.py cranberry/cli/main.py tests/test_md.py tests/test_remd.py tests/test_cli.py</code></td><td class="ok">passed</td><td>Syntax check for changed Python files.</td></tr>
+      <tr><td><code>bash -n scripts/hpc/mpi_runtime_env.sh scripts/hpc/mpi_rank_gpu_wrapper.sh scripts/hpc/run_cranberry_remd_mpi_mps.sh scripts/hpc/run_cranberry_md_mps_pack.sh scripts/hpc/submit_cacag_5us_pbc_l40s.sh scripts/hpc/submit_ggcGCAAgcc_5us_nopbc_l40s.sh</code></td><td class="ok">passed</td><td>Shell syntax check for launch helpers.</td></tr>
+      <tr><td><code>env SLURM_JOB_ID=preflight OUTPUT_DIR=/tmp/cranberry_submit_preflight TARGET_STEPS=0 scripts/hpc/submit_cacag_5us_pbc_l40s.sh</code></td><td class="ok">passed</td><td>Exercised the submitter's batch-side environment setup without launching REMD. The required <code>openmmtools</code>, <code>mpi4py</code>, and <code>netCDF4</code> imports passed under <code>/home/cs7998/.conda/envs/cranberry-dev/bin/python</code>; JAX reported CPU in this non-GPU preflight.</td></tr>
+      <tr><td><code>env SLURM_JOB_ID=preflight OUTPUT_DIR=/tmp/cranberry_ggcGCAAgcc_submit_preflight TARGET_STEPS=0 scripts/hpc/submit_ggcGCAAgcc_5us_nopbc_l40s.sh</code></td><td class="ok">passed</td><td>Exercised the <code>ggcGCAAgcc</code> no-PBC wrapper through the shared submitter without launching REMD. The required imports passed under the same <code>cranberry-dev</code> Python; JAX reported CPU in this non-GPU preflight.</td></tr>
+      <tr><td><code>/home/cs7998/.conda/envs/cranberry-dev/bin/python -m py_compile cranberry/remd.py tests/test_remd.py</code></td><td class="ok">passed</td><td>Syntax check after the restart-open mitigation.</td></tr>
+      <tr><td><code>/home/cs7998/.conda/envs/cranberry-dev/bin/python -m pytest tests/test_remd.py::test_sampler_from_storage_barriers_before_append_open tests/test_remd.py::test_run_remd_restarts_from_existing_storage tests/test_remd.py::test_run_remd_rejects_ladder_mismatch_on_restart -q</code></td><td class="ok">passed</td><td>3 passed, 1 existing NumPy/PyMBAR warning. Covers the fake-MPI barrier ordering, a real small OpenMMTools restart, and ladder mismatch rejection.</td></tr>
+      <tr><td><code>bash -n scripts/hpc/submit_cacag_5us_pbc_l40s.sh scripts/hpc/submit_ggcGCAAgcc_5us_nopbc_l40s.sh</code></td><td class="ok">passed</td><td>Shell syntax check after removing the NetCDF-HDF retry branch.</td></tr>
+      <tr><td><code>bash -lc 'export PMIX_RANK=1 PMI_RANK=1 OMPI_COMM_WORLD_RANK=1; source scripts/hpc/mpi_runtime_env.sh; test -z "${PMIX_RANK:-}" &amp;&amp; test -z "${PMI_RANK:-}" &amp;&amp; test -z "${OMPI_COMM_WORLD_RANK:-}"'</code></td><td class="ok">passed</td><td>Simulated stale interactive-shell MPI rank variables are cleared by the runtime helper.</td></tr>
+      <tr><td><code>/home/cs7998/.conda/envs/cranberry-dev/bin/python -c "import openmm, openmmtools, mpiplus; print(openmm.__version__, openmmtools.__version__)"</code></td><td class="ok">passed</td><td>Confirmed OpenMM 8.5.2 and OpenMMTools 0.26.0 in the direct dev environment. OpenMMTools import emits PyMBAR/JAX startup warnings.</td></tr>
+      <tr><td><code>/home/cs7998/.conda/envs/cranberry-dev/bin/python -m pytest -q tests/test_md.py tests/test_remd.py tests/test_cli.py</code></td><td class="ok">passed</td><td>47 passed, 1 existing NumPy binary-compatibility warning, 477.03 s.</td></tr>
+      <tr><td><code>git diff --check</code></td><td class="ok">passed</td><td>No whitespace errors in tracked-file diffs.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Risks And Follow-Up</h2>
+  <ul>
+    <li><span class="warn">The copied-production CACAG restart smoke is still pending.</span> The prepared directory <code>runs/cacag_restart_barrier_test_from_prod_copy</code> contains copied production restart artifacts and should be tested with a short Slurm run before retrying the real CACAG production directory.</li>
+    <li><span class="warn">CUDA/MPI/MPS throughput has not been fully validated in this report.</span> Some cluster smoke/prod runs were started during debugging, but a clean post-fix benchmark comparison is still needed.</li>
+    <li>The MPI behavior relies on OpenMMTools/mpiplus for sampler distribution. Cranberry now avoids duplicate Cranberry-owned writes, but true MPI correctness still depends on running under <code>mpirun</code> or <code>srun</code> with working <code>mpi4py</code>.</li>
+    <li><code>--n-analysis 0</code> remains the simplest way to avoid JAX overhead or JAX CUDA memory pressure. Matching the old melting performance path should use a GPU JAX build with nonzero <code>N_ANALYSIS</code>.</li>
+  </ul>
+</main>
+</body>
+</html>

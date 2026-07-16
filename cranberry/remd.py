@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 import warnings
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -14,6 +15,12 @@ from openmm import app, unit
 
 from cranberry.forcefield import CranberryForceField, get_model_spec, prepare_periodic_positions, validate_periodic_box_cutoffs
 from cranberry.md import _present_force_group_names, _sha256, _write_args
+from cranberry.runtime import (
+    jax_runtime_metadata,
+    normalize_platform_properties,
+    openmm_runtime_env_metadata,
+    parse_platform_property,
+)
 from cranberry.validation import validate_canonical_pdb
 
 try:
@@ -79,6 +86,7 @@ class RemdRunConfig:
     salt_concentration_millimolar: float = 150.0
     timestep_femtosecond: float = 5.0
     platform: str | None = 'CPU'
+    platform_properties: Mapping[str, object] | None = None
     restart_from: Path | None = None
     extra_start_pdb: Path | None = None
     overwrite: bool = False
@@ -105,7 +113,20 @@ class RemdRunResult:
     checkpoint_interval: int
     online_analysis_interval: int | None
     actual_platform: str | None
+    platform_properties: dict[str, str] | None
     jax_platform_name_env: str | None
+    jax_default_backend: str | None
+    mpi_enabled: bool
+    mpi_rank: int
+    mpi_size: int
+    is_mpi_root: bool
+
+
+@dataclass(frozen=True)
+class _MpiRuntime:
+    enabled: bool = False
+    rank: int = 0
+    size: int = 1
 
 
 def run_remd(config: RemdRunConfig) -> RemdRunResult:
@@ -128,14 +149,20 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
     n_iterations = max(1, int(config.steps / config.swap_steps))
     checkpoint_interval = max(1, int(config.steps / (config.swap_steps * config.n_record)))
     online_analysis_interval = None if config.n_analysis == 0 else max(1, int(n_iterations / config.n_analysis))
-    jax_platform_name_env = os.environ.get('JAX_PLATFORM_NAME')
+    platform_properties = normalize_platform_properties(config.platform_properties)
+    if config.platform is None and platform_properties is not None:
+        raise ValueError('platform_properties require an explicit OpenMM platform')
+    jax_metadata = jax_runtime_metadata(collect_backend=False)
+    openmmtools, mcmc, states, multistate = _load_openmmtools()
+    mpiplus = _load_mpiplus()
+    mpi_runtime = _detect_mpi_runtime(mpiplus)
 
     ladder_spec = config.temperature_ladder
     ladder_spec.validate_defaults()
     explicit_temperatures = ladder_spec.resolve()
 
     output_dir = Path(config.output_dir) if config.restart_from is None else Path(config.restart_from).parent
-    output_dir.mkdir(parents=True, exist_ok=True)
+    _mpi_run_single_node(mpiplus, mpi_runtime, _mkdir_output_dir, output_dir, sync_nodes=True)
     output_netcdf_path = Path(config.restart_from) if config.restart_from is not None else output_dir / 'output.nc'
     args_path = output_dir / 'args.json'
 
@@ -145,9 +172,9 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
         if config.dcd_mode == 'temperature':
             expected_outputs.append(output_dir / 'output_temperature_labels.txt')
     if config.restart_from is None and not config.overwrite:
-        _ensure_outputs_available(*expected_outputs)
+        _mpi_run_single_node(mpiplus, mpi_runtime, _ensure_outputs_available, *expected_outputs, sync_nodes=True)
     elif config.restart_from is not None and not output_netcdf_path.exists():
-        raise FileNotFoundError(f'REMD NetCDF restart not found: {output_netcdf_path}')
+        _mpi_run_single_node(mpiplus, mpi_runtime, _ensure_remd_restart_exists, output_netcdf_path, sync_nodes=True)
 
     pdb = app.PDBFile(str(config.pdb_path))
     box_padding = config.box_padding_nanometer * unit.nanometer
@@ -163,7 +190,6 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
         box_padding=box_padding,
     )
     validate_periodic_box_cutoffs(system)
-    openmmtools, mcmc, states, multistate = _load_openmmtools()
     move = mcmc.GHMCMove(timestep=config.timestep_femtosecond * unit.femtosecond, n_steps=config.swap_steps)
     sampler_cls = multistate.ParallelTemperingSampler
     actual_platform = None
@@ -174,7 +200,7 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
         if online_analysis_interval is not None:
             sampler_kwargs['online_analysis_interval'] = online_analysis_interval
         sampler = sampler_cls(**sampler_kwargs)
-        _apply_sampler_platform(sampler, openmmtools, config.platform)
+        _apply_sampler_platform(sampler, openmmtools, config.platform, platform_properties)
         reference_state = states.ThermodynamicState(system, temperature=reference_temperature * unit.kelvin)
         n_replicas = len(explicit_temperatures) if explicit_temperatures is not None else ladder_spec.n_replicas
         start_positions = _initial_positions(pdb, positions, config.extra_start_pdb, periodic=config.periodic, box_padding=box_padding)
@@ -188,10 +214,14 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
         actual_platform = _actual_sampler_platform(sampler, reference_state)
         _warn_platform_mismatch(config.platform, actual_platform)
         _warn_cuda_online_analysis(actual_platform, online_analysis_interval)
-        _write_args(
+        _mpi_run_single_node(
+            mpiplus,
+            mpi_runtime,
+            _write_args,
             args_path,
             _build_remd_args(
                 config=config,
+                platform_properties=platform_properties,
                 model_name=get_model_spec(config.model).name,
                 output_netcdf_path=output_netcdf_path,
                 output_dcd_path=None,
@@ -202,33 +232,57 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
                 online_analysis_interval=online_analysis_interval,
                 actual_platform=actual_platform,
                 openmmtools_version=getattr(openmmtools, '__version__', None),
+                mpi_runtime=mpi_runtime,
+                jax_metadata=jax_metadata,
                 pdb=pdb,
                 system=system,
             ),
+            sync_nodes=False,
         )
         sampler.minimize()
         sampler.run()
-        stored_temperatures = _read_temperatures_from_reporter(reporter)
+        stored_temperatures = _mpi_run_single_node(
+            mpiplus,
+            mpi_runtime,
+            _read_temperatures_from_reporter,
+            reporter,
+            broadcast_result=True,
+            sync_nodes=True,
+        )
         _close_if_present(reporter)
     else:
         reporter = multistate.MultiStateReporter(str(output_netcdf_path), open_mode='r', checkpoint_interval=checkpoint_interval)
-        stored_temperatures = _read_temperatures_from_reporter(reporter)
-        expected_temperatures = _expected_temperatures(ladder_spec)
-        if stored_temperatures != expected_temperatures:
-            raise ValueError(
-                'REMD restart ladder does not match the existing NetCDF storage: '
-                f'expected {expected_temperatures}, found {stored_temperatures}'
+        try:
+            stored_temperatures = _mpi_run_single_node(
+                mpiplus,
+                mpi_runtime,
+                _read_temperatures_from_reporter,
+                reporter,
+                broadcast_result=True,
+                sync_nodes=True,
             )
-        sampler = sampler_cls.from_storage(str(output_netcdf_path))
-        _apply_sampler_platform(sampler, openmmtools, config.platform)
+            expected_temperatures = _expected_temperatures(ladder_spec)
+            if stored_temperatures != expected_temperatures:
+                raise ValueError(
+                    'REMD restart ladder does not match the existing NetCDF storage: '
+                    f'expected {expected_temperatures}, found {stored_temperatures}'
+                )
+        finally:
+            _close_if_present(reporter)
+        sampler = _sampler_from_storage(sampler_cls, output_netcdf_path, mpiplus, mpi_runtime)
+        _apply_sampler_platform(sampler, openmmtools, config.platform, platform_properties)
         reference_state = states.ThermodynamicState(system, temperature=stored_temperatures[0] * unit.kelvin)
         actual_platform = _actual_sampler_platform(sampler, reference_state)
         _warn_platform_mismatch(config.platform, actual_platform)
         _warn_cuda_online_analysis(actual_platform, online_analysis_interval)
-        _write_args(
+        _mpi_run_single_node(
+            mpiplus,
+            mpi_runtime,
+            _write_args,
             args_path,
             _build_remd_args(
                 config=config,
+                platform_properties=platform_properties,
                 model_name=get_model_spec(config.model).name,
                 output_netcdf_path=output_netcdf_path,
                 output_dcd_path=None,
@@ -239,31 +293,70 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
                 online_analysis_interval=online_analysis_interval,
                 actual_platform=actual_platform,
                 openmmtools_version=getattr(openmmtools, '__version__', None),
+                mpi_runtime=mpi_runtime,
+                jax_metadata=jax_metadata,
                 pdb=pdb,
                 system=system,
             ),
+            sync_nodes=False,
         )
         sampler.extend(n_iterations)
-        _close_if_present(reporter)
+
+    if online_analysis_interval is not None:
+        jax_metadata = jax_runtime_metadata(collect_backend=True)
+        _mpi_run_single_node(
+            mpiplus,
+            mpi_runtime,
+            _write_args,
+            args_path,
+            _build_remd_args(
+                config=config,
+                platform_properties=platform_properties,
+                model_name=get_model_spec(config.model).name,
+                output_netcdf_path=output_netcdf_path,
+                output_dcd_path=None,
+                output_dcd_manifest_path=None,
+                temperatures_kelvin=stored_temperatures,
+                n_iterations=n_iterations,
+                checkpoint_interval=checkpoint_interval,
+                online_analysis_interval=online_analysis_interval,
+                actual_platform=actual_platform,
+                openmmtools_version=getattr(openmmtools, '__version__', None),
+                mpi_runtime=mpi_runtime,
+                jax_metadata=jax_metadata,
+                pdb=pdb,
+                system=system,
+            ),
+            sync_nodes=False,
+        )
 
     output_dcd_path = None
     output_dcd_manifest_path = None
     if config.write_dcd:
-        output_dcd_path = translate_netcdf_to_dcd(
+        output_dcd_path = _mpi_run_single_node(
+            mpiplus,
+            mpi_runtime,
+            _translate_netcdf_to_dcd,
             output_netcdf_path,
-            pdb_path=config.pdb_path,
-            output_dir=output_dir,
-            output_mode=config.dcd_mode,
-            overwrite=config.overwrite,
+            config.pdb_path,
+            output_dir,
+            config.dcd_mode,
+            config.overwrite,
+            broadcast_result=True,
+            sync_nodes=True,
         )
         if config.dcd_mode == 'temperature':
             output_dcd_manifest_path = output_dir / 'output_temperature_labels.txt'
 
     if output_dcd_path is not None or output_dcd_manifest_path is not None:
-        _write_args(
+        _mpi_run_single_node(
+            mpiplus,
+            mpi_runtime,
+            _write_args,
             args_path,
             _build_remd_args(
                 config=config,
+                platform_properties=platform_properties,
                 model_name=get_model_spec(config.model).name,
                 output_netcdf_path=output_netcdf_path,
                 output_dcd_path=output_dcd_path,
@@ -274,9 +367,12 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
                 online_analysis_interval=online_analysis_interval,
                 actual_platform=actual_platform,
                 openmmtools_version=getattr(openmmtools, '__version__', None),
+                mpi_runtime=mpi_runtime,
+                jax_metadata=jax_metadata,
                 pdb=pdb,
                 system=system,
             ),
+            sync_nodes=False,
         )
 
     _close_if_present(sampler)
@@ -295,7 +391,13 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
         checkpoint_interval=checkpoint_interval,
         online_analysis_interval=online_analysis_interval,
         actual_platform=actual_platform,
-        jax_platform_name_env=jax_platform_name_env,
+        platform_properties=platform_properties,
+        jax_platform_name_env=jax_metadata.get('jax_platform_name_env'),
+        jax_default_backend=jax_metadata.get('jax_default_backend'),
+        mpi_enabled=mpi_runtime.enabled,
+        mpi_rank=mpi_runtime.rank,
+        mpi_size=mpi_runtime.size,
+        is_mpi_root=_is_mpi_root(mpi_runtime),
     )
 
 
@@ -378,6 +480,7 @@ def build_remd_parser(subparsers, *, default_func) -> argparse.ArgumentParser:
     parser.add_argument('--periodic', action='store_true', help='enable explicit periodic boundary conditions with a generated cubic box')
     parser.add_argument('--box-padding', type=float, default=2.0, help='periodic cubic box padding around the structure in nanometers')
     parser.add_argument('--platform', default='CPU', help="OpenMM platform name; use 'default' to let OpenMM choose")
+    parser.add_argument('--platform-property', action='append', type=_platform_property_arg, default=None, metavar='KEY=VALUE', help='OpenMM platform property; repeat for multiple properties, e.g. Precision=mixed')
     parser.add_argument('--restart-from', type=Path, default=None, help='OpenMMTools NetCDF storage to restart from')
     parser.add_argument('--overwrite', action='store_true', help='allow overwriting existing REMD NetCDF outputs; default is no-overwrite')
     _add_dcd_mode_options(parser)
@@ -394,6 +497,121 @@ def _load_openmmtools():
     except ImportError as exc:  # pragma: no cover - exercised in environments without the extra
         raise ImportError("REMD requires the optional 'remd' extra (openmmtools).") from exc
     return openmmtools, mcmc, states, multistate
+
+
+def _load_mpiplus():
+    try:
+        import mpiplus
+    except ImportError:
+        return None
+    return mpiplus
+
+
+def _detect_mpi_runtime(mpiplus) -> _MpiRuntime:
+    if mpiplus is None:
+        return _MpiRuntime()
+    try:
+        comm = mpiplus.get_mpicomm()
+    except Exception:
+        return _MpiRuntime()
+    if comm is None:
+        return _MpiRuntime()
+
+    rank_getter = getattr(comm, 'Get_rank', None)
+    size_getter = getattr(comm, 'Get_size', None)
+    rank = rank_getter() if callable(rank_getter) else getattr(comm, 'rank', 0)
+    size = size_getter() if callable(size_getter) else getattr(comm, 'size', 1)
+    return _MpiRuntime(enabled=int(size) > 1, rank=int(rank), size=int(size))
+
+
+def _is_mpi_root(mpi_runtime: _MpiRuntime) -> bool:
+    return mpi_runtime.rank == 0
+
+
+def _mpi_run_single_node(
+    mpiplus,
+    mpi_runtime: _MpiRuntime,
+    func,
+    *args,
+    broadcast_result: bool = False,
+    sync_nodes: bool = False,
+):
+    if mpiplus is None or not mpi_runtime.enabled:
+        return func(*args)
+    ok, result = mpiplus.run_single_node(0, _capture_root_task, func, *args, broadcast_result=True)
+    if not ok:
+        if isinstance(result, BaseException):
+            raise result
+        raise RuntimeError(str(result))
+    if broadcast_result:
+        return result
+    return None
+
+
+def _capture_root_task(func, *args):
+    try:
+        return True, func(*args)
+    except Exception as exc:
+        return False, exc
+
+
+def _sampler_from_storage(sampler_cls, storage_path: Path, mpiplus, mpi_runtime: _MpiRuntime):
+    if mpiplus is None or not mpi_runtime.enabled:
+        return sampler_cls.from_storage(str(storage_path))
+
+    reporter = sampler_cls._reporter_from_storage(str(storage_path), check_exist=True)
+    try:
+        reporter.open(mode='r')
+        sampler = sampler_cls._instantiate_sampler_from_reporter(reporter)
+        sampler._restore_sampler_from_reporter(reporter)
+    finally:
+        reporter.close()
+
+    _mpi_barrier(mpiplus, mpi_runtime)
+    sampler._reporter = reporter
+    mpiplus.run_single_node(0, sampler._reporter.open, mode='a', broadcast_result=False, sync_nodes=True)
+    return sampler
+
+
+def _mpi_barrier(mpiplus, mpi_runtime: _MpiRuntime) -> None:
+    if mpiplus is None or not mpi_runtime.enabled:
+        return
+    comm = mpiplus.get_mpicomm()
+    if comm is None:
+        return
+    barrier = getattr(comm, 'barrier', None)
+    if callable(barrier):
+        barrier()
+        return
+    barrier = getattr(comm, 'Barrier', None)
+    if callable(barrier):
+        barrier()
+
+
+def _mkdir_output_dir(path: Path) -> None:
+    Path(path).mkdir(parents=True, exist_ok=True)
+
+
+def _ensure_remd_restart_exists(path: Path) -> None:
+    if not Path(path).exists():
+        raise FileNotFoundError(f'REMD NetCDF restart not found: {path}')
+
+
+def _translate_netcdf_to_dcd(netcdf_path: Path, pdb_path: Path, output_dir: Path, output_mode: str, overwrite: bool):
+    return translate_netcdf_to_dcd(
+        netcdf_path,
+        pdb_path=pdb_path,
+        output_dir=output_dir,
+        output_mode=output_mode,
+        overwrite=overwrite,
+    )
+
+
+def _platform_property_arg(value: str) -> tuple[str, str]:
+    try:
+        return parse_platform_property(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def _initial_positions(pdb: app.PDBFile, primary_positions, extra_start_pdb: Path | None, *, periodic: bool, box_padding):
@@ -418,11 +636,14 @@ def _warn_platform_mismatch(requested_platform: str | None, actual_platform: str
         )
 
 
-def _apply_sampler_platform(sampler, openmmtools, platform: str | None) -> None:
+def _apply_sampler_platform(sampler, openmmtools, platform: str | None, platform_properties: Mapping[str, object] | None) -> None:
     if platform is None:
         return
     platform_obj = mm.Platform.getPlatformByName(platform)
-    sampler.energy_context_cache = openmmtools.cache.ContextCache(platform=platform_obj)
+    sampler.energy_context_cache = openmmtools.cache.ContextCache(
+        platform=platform_obj,
+        platform_properties=normalize_platform_properties(platform_properties),
+    )
 
 
 def _warn_cuda_online_analysis(actual_platform: str | None, online_analysis_interval: int | None) -> None:
@@ -460,6 +681,7 @@ def _build_parallel_tempering_kwargs(ladder_spec: TemperatureLadderSpec, explici
 def _build_remd_args(
     *,
     config: RemdRunConfig,
+    platform_properties: Mapping[str, object] | None,
     model_name: str,
     output_netcdf_path: Path,
     output_dcd_path: Path | tuple[Path, ...] | None,
@@ -470,6 +692,8 @@ def _build_remd_args(
     online_analysis_interval: int | None,
     actual_platform: str | None,
     openmmtools_version: str | None,
+    mpi_runtime: _MpiRuntime,
+    jax_metadata: Mapping[str, object],
     pdb: app.PDBFile,
     system: mm.System,
 ) -> dict[str, object]:
@@ -477,7 +701,7 @@ def _build_remd_args(
     ladder_spec = config.temperature_ladder
     explicit_temperatures = ladder_spec.resolve()
     box_vectors = pdb.topology.getPeriodicBoxVectors()
-    return {
+    args = {
         'schema_version': 1,
         'run_kind': 'remd',
         'pdb_path': str(pdb_path),
@@ -502,6 +726,7 @@ def _build_remd_args(
         'salt_millimolar': float(config.salt_concentration_millimolar),
         'timestep_femtosecond': float(config.timestep_femtosecond),
         'platform': config.platform,
+        'platform_properties': normalize_platform_properties(platform_properties),
         'actual_platform': actual_platform,
         'restart_from': str(config.restart_from) if config.restart_from is not None else None,
         'overwrite': bool(config.overwrite),
@@ -525,6 +750,29 @@ def _build_remd_args(
         'cranberry_version': __version__,
         'openmm_version': getattr(mm, '__version__', None),
         'openmmtools_version': openmmtools_version,
+        'mpi': _mpi_runtime_metadata(mpi_runtime),
+    }
+    args.update(openmm_runtime_env_metadata())
+    args.update(jax_metadata)
+    return args
+
+
+def _mpi_runtime_metadata(mpi_runtime: _MpiRuntime) -> dict[str, object]:
+    return {
+        'enabled': mpi_runtime.enabled,
+        'rank': mpi_runtime.rank,
+        'size': mpi_runtime.size,
+        'openmmtools_enable_mpi': os.environ.get('OPENMMTOOLS_ENABLE_MPI'),
+        'n_mpi_ranks_env': os.environ.get('N_MPI_RANKS'),
+        'n_replicas_env': os.environ.get('N_REPLICAS'),
+        'num_gpus_env': os.environ.get('NUM_GPUS'),
+        'ranks_per_gpu_env': os.environ.get('RANKS_PER_GPU'),
+        'replicas_per_gpu_env': os.environ.get('REPLICAS_PER_GPU'),
+        'ompi_comm_world_rank': os.environ.get('OMPI_COMM_WORLD_RANK'),
+        'ompi_comm_world_local_rank': os.environ.get('OMPI_COMM_WORLD_LOCAL_RANK'),
+        'pmix_rank': os.environ.get('PMIX_RANK'),
+        'slurm_procid': os.environ.get('SLURM_PROCID'),
+        'slurm_localid': os.environ.get('SLURM_LOCALID'),
     }
 
 

@@ -10,6 +10,10 @@ from cranberry.data import data_path
 from cranberry.remd import (
     RemdRunConfig,
     TemperatureLadderSpec,
+    _MpiRuntime,
+    _detect_mpi_runtime,
+    _mpi_run_single_node,
+    _sampler_from_storage,
     _warn_cuda_online_analysis,
     run_remd,
     translate_netcdf_to_dcd,
@@ -56,7 +60,15 @@ def test_run_remd_and_translate_real_openmmtools(tmp_path):
     assert args['online_analysis_interval'] is None
     assert args['temperature_ladder_kelvin'] == [298.0, 318.0]
     assert args['platform'] == 'CPU'
+    assert args['platform_properties'] is None
     assert args['actual_platform'] == 'CPU'
+    assert args['mpi']['enabled'] is False
+    assert args['mpi']['rank'] == 0
+    assert args['mpi']['size'] == 1
+    assert args['jax_metadata_collected'] is False
+    assert 'jax_version' in args
+    assert 'cuda_visible_devices' in args
+    assert 'cuda_mps_pipe_directory' in args
     assert args['periodic'] is False
     assert args['periodic_box_vectors_present'] is False
 
@@ -121,6 +133,116 @@ def test_run_remd_accepts_extra_start_pdb_and_records_metadata(tmp_path):
     assert args['extra_start_pdb_sha256']
 
 
+@pytest.mark.remd
+def test_run_remd_records_platform_properties(tmp_path):
+    pdb = data_path('examples/2ntCG_cg_vs_conect.pdb')
+    result = run_remd(
+        RemdRunConfig(
+            pdb_path=pdb,
+            steps=1,
+            output_dir=tmp_path,
+            temperature_ladder=TemperatureLadderSpec(temperatures=(298.0, 318.0)),
+            swap_steps=1,
+            platform_properties={'Threads': '1'},
+            overwrite=True,
+        )
+    )
+    assert result.platform_properties == {'Threads': '1'}
+    args = json.loads(result.args_path.read_text())
+    assert args['platform_properties'] == {'Threads': '1'}
+
+
+def test_detect_mpi_runtime_from_fake_mpiplus():
+    class FakeComm:
+        def Get_rank(self):
+            return 2
+
+        def Get_size(self):
+            return 4
+
+    class FakeMpiplus:
+        @staticmethod
+        def get_mpicomm():
+            return FakeComm()
+
+    runtime = _detect_mpi_runtime(FakeMpiplus())
+    assert runtime.enabled is True
+    assert runtime.rank == 2
+    assert runtime.size == 4
+
+
+def test_mpi_run_single_node_broadcasts_root_exception():
+    class FakeMpiplus:
+        @staticmethod
+        def run_single_node(rank, task, *args, **kwargs):
+            assert rank == 0
+            assert kwargs['broadcast_result'] is True
+            return task(*args)
+
+    def fail():
+        raise FileExistsError('already here')
+
+    with pytest.raises(FileExistsError, match='already here'):
+        _mpi_run_single_node(FakeMpiplus(), _MpiRuntime(enabled=True, rank=1, size=2), fail)
+
+
+def test_sampler_from_storage_barriers_before_append_open():
+    events = []
+
+    class FakeReporter:
+        def open(self, mode):
+            events.append(f'open:{mode}')
+
+        def close(self):
+            events.append('close')
+
+    class FakeSampler:
+        def _restore_sampler_from_reporter(self, reporter):
+            events.append('restore')
+
+    class FakeSamplerClass:
+        @staticmethod
+        def _reporter_from_storage(storage, check_exist=True):
+            events.append(f'reporter:{storage}:{check_exist}')
+            return FakeReporter()
+
+        @staticmethod
+        def _instantiate_sampler_from_reporter(reporter):
+            events.append('instantiate')
+            return FakeSampler()
+
+    class FakeComm:
+        def barrier(self):
+            events.append('barrier')
+
+    class FakeMpiplus:
+        @staticmethod
+        def get_mpicomm():
+            return FakeComm()
+
+        @staticmethod
+        def run_single_node(rank, task, *args, **kwargs):
+            assert rank == 0
+            assert kwargs['sync_nodes'] is True
+            events.append('run_single_node')
+            task_kwargs = {key: value for key, value in kwargs.items() if key not in {'broadcast_result', 'sync_nodes'}}
+            return task(*args, **task_kwargs)
+
+    sampler = _sampler_from_storage(FakeSamplerClass, 'storage.nc', FakeMpiplus(), _MpiRuntime(enabled=True, rank=1, size=2))
+
+    assert sampler._reporter is not None
+    assert events == [
+        'reporter:storage.nc:True',
+        'open:r',
+        'instantiate',
+        'restore',
+        'close',
+        'barrier',
+        'run_single_node',
+        'open:a',
+    ]
+
+
 def test_warn_cuda_online_analysis_reports_jax_gpu_risk():
     with pytest.warns(RuntimeWarning, match='PyMBAR/JAX.*CUDA.*--n-analysis 0'):
         _warn_cuda_online_analysis('CUDA', 1)
@@ -154,6 +276,9 @@ def test_run_remd_records_online_analysis_interval(tmp_path, monkeypatch):
     assert args['n_analysis'] == 2
     assert args['online_analysis_interval'] == 1
     assert args['jax_platform_name_env'] == 'cpu'
+    assert args['jax_metadata_collected'] is True
+    assert args['jax_default_backend'] == 'cpu'
+    assert isinstance(args['jax_devices'], list)
 
 
 @pytest.mark.remd
@@ -182,3 +307,35 @@ def test_run_remd_rejects_ladder_mismatch_on_restart(tmp_path):
                 overwrite=True,
             )
         )
+
+
+@pytest.mark.remd
+def test_run_remd_restarts_from_existing_storage(tmp_path):
+    pdb = data_path('examples/2ntCG_cg_vs_conect.pdb')
+    first = run_remd(
+        RemdRunConfig(
+            pdb_path=pdb,
+            steps=1,
+            output_dir=tmp_path,
+            temperature_ladder=TemperatureLadderSpec(temperatures=(298.0, 318.0)),
+            swap_steps=1,
+            overwrite=True,
+        )
+    )
+
+    second = run_remd(
+        RemdRunConfig(
+            pdb_path=pdb,
+            steps=1,
+            output_dir=tmp_path,
+            temperature_ladder=TemperatureLadderSpec(temperatures=(298.0, 318.0)),
+            swap_steps=1,
+            restart_from=first.output_netcdf_path,
+            overwrite=True,
+        )
+    )
+
+    args = json.loads(second.args_path.read_text())
+    assert second.restart_from_path == first.output_netcdf_path
+    assert second.output_netcdf_path == first.output_netcdf_path
+    assert args['restart_from'] == str(first.output_netcdf_path)

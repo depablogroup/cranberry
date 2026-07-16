@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from cranberry.cli.main import main
 from cranberry.data import data_path
@@ -27,6 +29,7 @@ def test_cli_remd_help(capsys):
     assert "--write-dcd" in captured.out
     assert "--periodic" in captured.out
     assert "--box-padding" in captured.out
+    assert "--platform-property" in captured.out
     assert "--overwrite" in captured.out
     assert "--by-replica" in captured.out
     assert "--by-temperature" in captured.out
@@ -42,6 +45,7 @@ def test_cli_md_help(capsys):
     assert "--periodic" in captured.out
     assert "--box-padding" in captured.out
     assert "--enforce-periodic-output" in captured.out
+    assert "--platform-property" in captured.out
 
 def test_cli_inspect_summary(capsys):
     assert main(["inspect"]) == 0
@@ -132,6 +136,14 @@ def test_cli_md_smoke(tmp_path, monkeypatch, capsys):
     assert (tmp_path / "final.pdb").exists()
 
 
+def test_cli_md_accepts_platform_property(tmp_path, monkeypatch):
+    path = data_path("examples/2ntCG_cg_vs_conect.pdb")
+    monkeypatch.chdir(tmp_path)
+    assert main(["md", str(path), "--steps", "1", "--platform-property", "Threads=1"]) == 0
+    args = json.loads((tmp_path / "args.json").read_text())
+    assert args["platform_properties"] == {"Threads": "1"}
+
+
 @pytest.mark.remd
 def test_cli_remd_default_ladder_smoke(tmp_path, monkeypatch):
     path = data_path("examples/2ntCG_cg_vs_conect.pdb")
@@ -175,6 +187,28 @@ def test_cli_remd_smoke_with_default_output_dir(tmp_path, monkeypatch, capsys):
     assert "args:" in captured.out
     assert (tmp_path / "output.nc").exists()
     assert (tmp_path / "args.json").exists()
+
+
+@pytest.mark.remd
+def test_cli_remd_accepts_platform_property(tmp_path, monkeypatch):
+    path = data_path("examples/2ntCG_cg_vs_conect.pdb")
+    monkeypatch.chdir(tmp_path)
+    assert main([
+        "remd",
+        str(path),
+        "--steps",
+        "1",
+        "--swap-steps",
+        "1",
+        "--temperature-ladder",
+        "298",
+        "318",
+        "--platform-property",
+        "Threads=1",
+        "--overwrite",
+    ]) == 0
+    args = json.loads((tmp_path / "args.json").read_text())
+    assert args["platform_properties"] == {"Threads": "1"}
 
 
 def test_cli_md_restart_smoke(tmp_path, capsys):
