@@ -34,6 +34,7 @@ class MDRunResult:
     restart_from_path: Path | None
     steps: int
     report_interval: int
+    checkpoint_interval: int
     n_record: int
     minimization_report_path: Path | None
     actual_platform: str | None
@@ -100,6 +101,7 @@ def run_md(
     salt_concentration=150 * unit.millimolar,
     timestep=5 * unit.femtosecond,
     report_interval: int | None = None,
+    checkpoint_interval: int | None = None,
     n_record: int = 1000,
     platform: str | None = "CPU",
     restart_from: str | Path | None = None,
@@ -120,6 +122,10 @@ def run_md(
         report_interval = max(1, int(steps / n_record))
     if report_interval < 1:
         raise ValueError("report_interval must be at least 1")
+    if checkpoint_interval is None:
+        checkpoint_interval = max(1, report_interval * 10)
+    if checkpoint_interval < 1:
+        raise ValueError("checkpoint_interval must be at least 1")
 
     output_dir = Path(output_dir)
     restart_from_path = Path(restart_from) if restart_from is not None else None
@@ -137,6 +143,7 @@ def run_md(
         restart_from_path=restart_from_path,
         steps=steps,
         report_interval=report_interval,
+        checkpoint_interval=checkpoint_interval,
         n_record=n_record,
         minimization_report_path=(output_dir / "minimization_report.json") if write_minimization_report else None,
         actual_platform=None,
@@ -174,6 +181,7 @@ def run_md(
         model=model_name,
         steps=steps,
         report_interval=report_interval,
+        checkpoint_interval=checkpoint_interval,
         n_record=n_record,
         temperature=temperature,
         salt_concentration=salt_concentration,
@@ -228,6 +236,7 @@ def run_md(
         restart_from_path=result.restart_from_path,
         steps=result.steps,
         report_interval=result.report_interval,
+        checkpoint_interval=result.checkpoint_interval,
         n_record=result.n_record,
         minimization_report_path=result.minimization_report_path,
         actual_platform=actual_platform,
@@ -253,7 +262,7 @@ def run_md(
         )
     )
     simulation.reporters.append(DetailedEnergyReporter(result.detailed_log_path, report_interval, append=detailed_append))
-    simulation.reporters.append(app.CheckpointReporter(str(result.checkpoint_path), report_interval))
+    simulation.reporters.append(app.CheckpointReporter(str(result.checkpoint_path), result.checkpoint_interval))
 
     minimization_summary = _minimize_and_report(simulation, result.minimization_report_path)
     print(
@@ -320,7 +329,7 @@ def _as_quantity(value, default_unit):
     return value * default_unit
 
 
-def _build_args(*, pdb_path, model, steps, report_interval, n_record, temperature, salt_concentration, timestep, platform, restart_from, append_outputs, dcd_append, log_append, detailed_append, overwrite, write_minimization_report, periodic, box_padding, enforce_periodic_output, log_progress, actual_platform):
+def _build_args(*, pdb_path, model, steps, report_interval, checkpoint_interval, n_record, temperature, salt_concentration, timestep, platform, restart_from, append_outputs, dcd_append, log_append, detailed_append, overwrite, write_minimization_report, periodic, box_padding, enforce_periodic_output, log_progress, actual_platform):
     pdb_path = Path(pdb_path)
     return {
         "schema_version": 1,
@@ -330,6 +339,7 @@ def _build_args(*, pdb_path, model, steps, report_interval, n_record, temperatur
         "model": model,
         "steps": int(steps),
         "report_interval": int(report_interval),
+        "checkpoint_interval": int(checkpoint_interval),
         "n_record": int(n_record),
         "temperature_kelvin": float(_as_quantity(temperature, unit.kelvin).value_in_unit(unit.kelvin)),
         "salt_millimolar": float(_as_quantity(salt_concentration, unit.millimolar).value_in_unit(unit.millimolar)),

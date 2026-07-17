@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>MD Checkpoint Interval Report</title></head>
+<body>
+<main>
+  <h1>MD Checkpoint Interval Report</h1>
+  <p>This report covers the MD checkpoint cadence update: checkpoint writes are now decoupled from trajectory/log reporting.</p>
+  <h2>Change</h2>
+  <ul>
+    <li>Added <code>checkpoint_interval</code> to <code>run_md()</code> and <code>MDRunResult</code>.</li>
+    <li>Added <code>cranberry md --checkpoint-interval</code>.</li>
+    <li>The default checkpoint interval is <code>10 * report_interval</code>, so checkpoints are refreshed 10 times less often than DCD/log/detailed-log records by default.</li>
+    <li><code>args.json</code> records <code>checkpoint_interval</code> for provenance.</li>
+    <li>The final explicit <code>saveCheckpoint()</code> remains, so completed runs still leave a latest checkpoint.</li>
+  </ul>
+  <h2>Validation</h2>
+  <ul>
+    <li>Focused MD/CLI tests cover default and explicit checkpoint intervals.</li>
+  </ul>
+</main>
+</body>
+</html>

@@ -75,6 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     md_parser.add_argument("--no-log-progress", action="store_false", dest="log_progress", help="omit OpenMM Progress (%%) from the MD log file")
     md_parser.set_defaults(log_progress=True)
     md_parser.add_argument("--n-record", type=int, default=1000, help="target number of trajectory/log records; report interval is derived as max(1, steps // n_record)")
+    md_parser.add_argument("--checkpoint-interval", type=int, default=None, help="MD checkpoint refresh interval in integration steps; defaults to 10 times the trajectory/log report interval")
     md_parser.add_argument("--write-minimization-report", action="store_true", help="write pre/post minimization energies to minimization_report.json")
     md_parser.add_argument("--platform", default="CPU", help="OpenMM platform name; use 'default' to let OpenMM choose")
     md_parser.add_argument("--restart-from", type=Path, default=None, help="OpenMM checkpoint to restart from")
@@ -267,7 +268,7 @@ def _remd_extract(args: argparse.Namespace) -> int:
 
 
 def _runtime_settings_line(
-args: argparse.Namespace, *, platform: str | None, report_interval: int | None = None, actual_platform: str | None = None) -> str:
+args: argparse.Namespace, *, platform: str | None, report_interval: int | None = None, checkpoint_interval: int | None = None, actual_platform: str | None = None) -> str:
     model_spec = get_model_spec(args.model)
     effective_platform = platform if platform is not None else "default"
     return (
@@ -277,6 +278,7 @@ args: argparse.Namespace, *, platform: str | None, report_interval: int | None =
         f"salt={args.salt:.1f} mM, "
         f"timestep={args.timestep:.1f} fs, "
         f"report_interval={report_interval if report_interval is not None else 'auto'}, "
+        f"checkpoint_interval={checkpoint_interval if checkpoint_interval is not None else 'auto'}, "
         f"n_record={getattr(args, 'n_record', 'auto')}, "
         f"periodic={getattr(args, 'periodic', False)}, "
         f"enforce_periodic_output={getattr(args, 'enforce_periodic_output', False)}, "
@@ -296,6 +298,7 @@ def _md(args: argparse.Namespace) -> int:
         salt_concentration=args.salt * unit.millimolar,
         timestep=args.timestep * unit.femtosecond,
         report_interval=getattr(args, "report_interval", None),
+        checkpoint_interval=args.checkpoint_interval,
         n_record=args.n_record,
         platform=platform,
         restart_from=args.restart_from,
@@ -306,7 +309,7 @@ def _md(args: argparse.Namespace) -> int:
         enforce_periodic_output=args.enforce_periodic_output,
         log_progress=args.log_progress,
     )
-    print(_runtime_settings_line(args, platform=platform, report_interval=result.report_interval, actual_platform=result.actual_platform))
+    print(_runtime_settings_line(args, platform=platform, report_interval=result.report_interval, checkpoint_interval=result.checkpoint_interval, actual_platform=result.actual_platform))
     print(f"output directory: {result.output_dir}")
     print(f"trajectory: {result.dcd_path}")
     print(f"log: {result.log_path}")

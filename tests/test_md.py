@@ -110,7 +110,9 @@ def test_run_md_writes_default_outputs(tmp_path):
     assert args["schema_version"] == 1
     assert args["run_kind"] == "md"
     assert args["steps"] == 1
+    assert result.checkpoint_interval == 10
     assert args["report_interval"] == 1
+    assert args["checkpoint_interval"] == 10
     assert args["n_record"] == 1000
     assert args["model"] == "cranberry-v1-alpha.1"
     assert args["restart_from"] is None
@@ -153,6 +155,22 @@ def test_run_md_can_omit_log_progress(tmp_path):
     log_lines = result.log_path.read_text().splitlines()
     assert "Progress (%)" not in log_lines[0]
     assert json.loads(result.args_path.read_text())["log_progress"] is False
+
+
+def test_run_md_accepts_explicit_checkpoint_interval(tmp_path):
+    result = run_md(
+        data_path("examples/2ntCG_cg_vs_conect.pdb"),
+        steps=1,
+        report_interval=1,
+        checkpoint_interval=1,
+        output_dir=tmp_path,
+        platform="CPU",
+    )
+
+    args = json.loads(result.args_path.read_text())
+    assert result.report_interval == 1
+    assert result.checkpoint_interval == 1
+    assert args["checkpoint_interval"] == 1
 
 
 def test_run_md_writes_minimization_report(tmp_path):

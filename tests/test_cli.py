@@ -120,6 +120,7 @@ def test_cli_md_smoke(tmp_path, monkeypatch, capsys):
     assert "temperature=298.0 K" in captured.out
     assert "salt=150.0 mM" in captured.out
     assert "timestep=5.0 fs" in captured.out
+    assert "checkpoint_interval=10" in captured.out
     assert "periodic=False" in captured.out
     assert "enforce_periodic_output=False" in captured.out
     assert "platform=CPU" in captured.out
@@ -129,6 +130,8 @@ def test_cli_md_smoke(tmp_path, monkeypatch, capsys):
     assert (tmp_path / "log").exists()
     assert (tmp_path / "detailed.log").exists()
     assert (tmp_path / "args.json").exists()
+    args = json.loads((tmp_path / "args.json").read_text())
+    assert args["checkpoint_interval"] == 10
     assert (tmp_path / "checkpoint.chk").exists()
     assert (tmp_path / "final.pdb").exists()
 
