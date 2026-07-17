@@ -1,3 +1,4 @@
+import csv
 import json
 
 import pytest
@@ -123,18 +124,35 @@ def test_run_md_writes_default_outputs(tmp_path):
     assert args["periodic"] is False
     assert args["box_padding_nanometer"] == pytest.approx(2.0)
     assert args["enforce_periodic_output"] is False
+    assert args["log_progress"] is True
 
     log_header = result.log_path.read_text().splitlines()[0]
     assert "Kinetic Energy" in log_header
     assert "Total Energy" in log_header
     assert "Elapsed Time" in log_header
     assert "Time Remaining" in log_header
+    assert "Progress (%)" in log_header
 
     detailed = result.detailed_log_path.read_text().splitlines()
     assert detailed[0].startswith('#"Step","Time (ps)","Potential Energy (kJ/mole)","bond (kJ/mole)"')
     assert len(detailed) == 2
     validate_canonical_pdb(result.final_pdb_path).raise_for_errors()
 
+
+
+def test_run_md_can_omit_log_progress(tmp_path):
+    result = run_md(
+        data_path("examples/2ntCG_cg_vs_conect.pdb"),
+        steps=2,
+        report_interval=1,
+        output_dir=tmp_path,
+        platform="CPU",
+        log_progress=False,
+    )
+
+    log_lines = result.log_path.read_text().splitlines()
+    assert "Progress (%)" not in log_lines[0]
+    assert json.loads(result.args_path.read_text())["log_progress"] is False
 
 
 def test_run_md_writes_minimization_report(tmp_path):
@@ -247,8 +265,11 @@ def test_run_md_restarts_from_checkpoint_and_appends_outputs(tmp_path):
     assert args["append_outputs"] is True
     detailed = second.detailed_log_path.read_text().splitlines()
     assert [line.split(",", 1)[0] for line in detailed[1:]] == ["1", "2"]
-    log_lines = [line for line in second.log_path.read_text().splitlines() if not line.startswith("#")]
-    assert [line.split(",", 1)[0] for line in log_lines] == ["1", "2"]
+    log_lines = second.log_path.read_text().splitlines()
+    log_header = next(csv.reader([log_lines[0].lstrip("#")]))
+    step_index = log_header.index("Step")
+    log_rows = list(csv.reader(line for line in log_lines[1:] if not line.startswith("#")))
+    assert [row[step_index] for row in log_rows] == ["1", "2"]
     assert second.dcd_path.stat().st_size > initial_dcd_size
 
 
