@@ -211,6 +211,7 @@ def test_run_remd_mpi_restart_reopens_existing_storage(tmp_path):
     env['OPENMMTOOLS_ENABLE_MPI'] = '1'
     command = [
         mpirun,
+        '--oversubscribe',
         '-n',
         '2',
         sys.executable,

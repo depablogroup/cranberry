@@ -13,7 +13,7 @@
   <ul>
     <li>Added <code>test_run_remd_mpi_restart_reopens_existing_storage</code> in <code>tests/test_remd.py</code>.</li>
     <li>The test creates a one-step serial REMD storage file with <code>run_remd</code>.</li>
-    <li>It then launches <code>mpirun -n 2 python -m cranberry.cli.main remd ... --restart-from output.nc</code> with <code>OPENMMTOOLS_ENABLE_MPI=1</code>.</li>
+    <li>It then launches <code>mpirun --oversubscribe -n 2 python -m cranberry.cli.main remd ... --restart-from output.nc</code> with <code>OPENMMTOOLS_ENABLE_MPI=1</code>. The oversubscribe flag lets GitHub-hosted runners start two tiny CPU ranks even when OpenMPI detects only one default slot.</li>
     <li>Updated GitHub Actions CI to install <code>openmpi</code> and <code>mpi4py</code> so the regression runs in CI.</li>
   </ul>
 
