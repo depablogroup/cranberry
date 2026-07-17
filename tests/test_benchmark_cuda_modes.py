@@ -1,4 +1,4 @@
-from benchmarks.benchmark_cuda_modes import DEFAULT_PDB, to_yaml
+from benchmarks.benchmark_cuda_modes import DEFAULT_PDB, parse_openmmtools_yaml, to_yaml
 
 
 def test_cuda_modes_yaml_writer_handles_nested_values():
@@ -19,3 +19,27 @@ def test_cuda_modes_yaml_writer_handles_nested_values():
 
 def test_cuda_modes_default_fixture_is_ggcgcaa():
     assert DEFAULT_PDB == "examples/ggcGCAAgcc_cg_vs_conect.pdb"
+
+
+def test_cuda_modes_reads_openmmtools_online_analysis_speed(tmp_path):
+    analysis = tmp_path / "output_real_time_analysis.yaml"
+    analysis.write_text(
+        "- iteration: 20\n"
+        "  timing_data:\n"
+        "    average_seconds_per_iteration: 1.25\n"
+        "    ns_per_day: 276.48\n"
+        "- iteration: 40\n"
+        "  timing_data:\n"
+        "    average_seconds_per_iteration: 1.0\n"
+        "    ns_per_day: 345.6\n"
+    )
+
+    summary = parse_openmmtools_yaml(analysis)
+
+    assert summary == {
+        "path": str(analysis),
+        "iteration_records": 2,
+        "last_iteration": 40,
+        "timing_data_ns_per_day_values": [276.48, 345.6],
+        "timing_data_average_seconds_per_iteration_values": [1.25, 1.0],
+    }

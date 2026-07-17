@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Local CUDA Modes Benchmark Report</title></head>
+<body>
+<main>
+  <h1>Local CUDA Modes Benchmark Report</h1>
+  <p>This report records the local RTX 2060 benchmark harness and ggcGCAAgcc CUDA/MPS/REMD runs.</p>
+
+  <h2>Implementation</h2>
+  <ul>
+    <li>Added <code>benchmarks/benchmark_cuda_modes.py</code>, a local YAML benchmark harness.</li>
+    <li>The harness samples <code>nvidia-smi</code> for mean/max GPU utilization and max memory.</li>
+    <li>MD rows record per-runner log speed and aggregate log/wall speed.</li>
+    <li>REMD rows parse OpenMMTools <code>output_real_time_analysis.yaml</code>; its <code>timing_data.ns_per_day</code> is aggregate REMD throughput.</li>
+    <li>The REMD benchmark can launch through <code>mpirun --oversubscribe -n N</code> with <code>OPENMMTOOLS_ENABLE_MPI=1</code>; <code>--start-mps</code> starts CUDA MPS for multi-rank GPU packing.</li>
+    <li>The benchmark default compares REMD <code>--n-analysis 0</code> and <code>--n-analysis 10</code>. Cranberry's package default remains <code>n_analysis=0</code>.</li>
+  </ul>
+
+  <h2>MD/MPS Results</h2>
+  <table>
+    <thead><tr><th>Run</th><th>Mean GPU util</th><th>Per-runner log speed</th><th>Aggregate log speed</th><th>Aggregate wall speed</th></tr></thead>
+    <tbody>
+      <tr><td>single MD CUDA</td><td>54.47%</td><td>819.00 ns/day</td><td>819.00 ns/day</td><td>450.57 ns/day</td></tr>
+      <tr><td>MPS MD x2</td><td>64.59%</td><td>752.50 ns/day</td><td>1505.00 ns/day</td><td>1025.52 ns/day</td></tr>
+      <tr><td>MPS MD x4</td><td>70.21%</td><td>670.75 ns/day</td><td>2683.00 ns/day</td><td>1801.92 ns/day</td></tr>
+      <tr><td>MPS MD x8</td><td>66.67%</td><td>551.25 ns/day</td><td>4410.00 ns/day</td><td>2827.31 ns/day</td></tr>
+    </tbody>
+  </table>
+
+  <h2>REMD Results</h2>
+  <table>
+    <thead><tr><th>Run</th><th>n_analysis</th><th>Status</th><th>Aggregate speed</th><th>Per-runner speed</th><th>Wall time</th></tr></thead>
+    <tbody>
+      <tr><td>serial REMD CUDA</td><td>0</td><td>passed</td><td>469.42 ns/day</td><td>469.42 ns/day</td><td>171.92 s</td></tr>
+      <tr><td>serial REMD CUDA</td><td>10</td><td>passed</td><td>451.39 ns/day last, 425.98 mean</td><td>451.39 ns/day last</td><td>176.89 s</td></tr>
+      <tr><td>MPI+MPS REMD CUDA, JAX GPU</td><td>0/10</td><td>failed</td><td>n/a</td><td>n/a</td><td>cuSolver error in PyMBAR/JAX analysis</td></tr>
+      <tr><td>MPI+MPS REMD CUDA, JAX CPU</td><td>0</td><td>failed after timing</td><td>1280.51 ns/day</td><td>160.06 ns/day</td><td>86.81 s</td></tr>
+      <tr><td>MPI+MPS REMD CUDA, JAX CPU</td><td>10</td><td>failed after timing</td><td>1533.26 ns/day last, 1215.65 mean</td><td>191.66 ns/day last</td><td>66.31 s</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Notes</h2>
+  <ul>
+    <li>For REMD, OpenMMTools <code>ns_per_day</code> is aggregate speed across replicas. The report divides by MPI ranks to show per-runner speed.</li>
+    <li>Plain serial REMD is not the real multi-rank scenario; use MPI plus MPS. Without MPI, <code>mpiplus</code> uses a size-1 communicator and OpenMMTools runs serially.</li>
+    <li>The MPI+MPS JAX-CPU run wrote timing YAML but exited nonzero because Cranberry currently reads reporter thermodynamic states on non-root MPI ranks after sampling.</li>
+    <li>Raw run directories contain DCD/checkpoint/NetCDF/stdout/stderr artifacts and are intentionally separate from the compact YAML snapshots.</li>
+  </ul>
+
+  <h2>Validation</h2>
+  <ul>
+    <li><code>conda run -n cranberry-dev python -m pytest -q tests/test_benchmark_cuda_modes.py</code> passed: 3 passed.</li>
+    <li><code>git diff --check</code> passed.</li>
+  </ul>
+</main>
+</body>
+</html>

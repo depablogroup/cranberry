@@ -1,0 +1,260 @@
+schema_version: 1
+generated_at: '2026-07-17T21:05:36.550513+00:00'
+host: 'yihengwu-Precision-3630-Tower'
+pdb: '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+gpu:
+  name: NVIDIA GeForce RTX 2060
+  driver_version: 595.71.05
+  memory_total_mib: 6144.0
+  cuda_visible_devices: null
+notes:
+  - 'OpenMM context creation is included in wall time; speed is also parsed from logs when available.'
+runs:
+  -
+    kind: 'remd-cuda-8temps-analysis-0'
+    returncode: 0
+    command:
+      - '/home/yihengwu/miniforge3/envs/cranberry-dev/bin/python'
+      - '-m'
+      - 'cranberry.cli.main'
+      - remd
+      - '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+      - '--steps'
+      - 20000
+      - '--swap-steps'
+      - 100
+      - '--n-replicas'
+      - 8
+      - '--t-min'
+      - 298
+      - '--t-max'
+      - 600
+      - '--n-analysis'
+      - 0
+      - '--output-dir'
+      - 'benchmarks/results/local_cuda_remd_analysis_compare_ggcGCAAgcc_runs/remd_cuda_8temps_analysis_0'
+      - '--platform'
+      - CUDA
+      - '--overwrite'
+    wall_seconds: 171.91777504293714
+    stdout_path: 'benchmarks/results/local_cuda_remd_analysis_compare_ggcGCAAgcc_runs/remd_cuda_8temps_analysis_0/stdout.txt'
+    stderr_path: 'benchmarks/results/local_cuda_remd_analysis_compare_ggcGCAAgcc_runs/remd_cuda_8temps_analysis_0/stderr.txt'
+    gpu_samples: 169
+    gpu_utilization_percent_mean: 64.61538461538461
+    gpu_utilization_percent_max: 77.0
+    gpu_memory_mib_max: 4780.0
+    steps: 20000
+    parallel_processes: 1
+    mps_enabled: false
+    n_replicas: 8
+    n_analysis: 0
+    args_json:
+      actual_platform: CUDA
+      box_padding_nanometer: 2.0
+      checkpoint_interval: 1
+      cranberry_version: 1.0.0a1
+      dcd_mode: replica
+      extra_start_pdb_path: null
+      extra_start_pdb_sha256: null
+      force_groups:
+        - 'bond'
+        - 'angle'
+        - dihedral
+        - wca
+        - electrostatic
+        - 'spline'
+        - pucker
+        - 'stacking35'
+        - 'stacking55'
+        - 'stacking33'
+        - 'pairing'
+      iterations: 200
+      jax_platform_name_env: null
+      mcmc_move: GHMCMove
+      model: 'cranberry-v1-alpha.1'
+      n_analysis: 0
+      n_record: 1000
+      n_replicas: 8
+      online_analysis_interval: null
+      openmm_version: 8.5.2
+      openmmtools_version: 0.26.0
+      output_dcd_manifest_path: null
+      output_dcd_path: null
+      output_netcdf_path: 'benchmarks/results/local_cuda_remd_analysis_compare_ggcGCAAgcc_runs/remd_cuda_8temps_analysis_0/output.nc'
+      overwrite: true
+      pdb_path: '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+      pdb_sha256: 341f701020c33e4044cd998782b5c127f82da044dbafa424fc7ade5913de420a
+      periodic: false
+      periodic_box_vectors_present: false
+      platform: CUDA
+      requested_n_replicas: 8
+      restart_from: null
+      run_kind: remd
+      salt_millimolar: 150.0
+      sampler: 'ParallelTemperingSampler'
+      schema_version: 1
+      steps: 20000
+      structure_summary:
+        atoms: 80
+        bonds: 99
+        chains: 1
+        residues: 10
+      swap_steps: 100
+      t_max_kelvin: 600.0
+      t_min_kelvin: 298.0
+      temperature_ladder_input_kelvin: null
+      temperature_ladder_kelvin:
+        - 298.00000000000006
+        - 329.33322562677876
+        - 363.9609849051636
+        - 402.22968174871426
+        - 444.52214272864626
+        - 491.26144673608184
+        - 542.9151573143348
+        - 599.9999999999997
+      timestep_femtosecond: 5.0
+      write_dcd: false
+    online_analysis:
+      path: 'benchmarks/results/local_cuda_remd_analysis_compare_ggcGCAAgcc_runs/remd_cuda_8temps_analysis_0/output_real_time_analysis.yaml'
+      iteration_records: 1
+      last_iteration: 200
+      timing_data_ns_per_day_values:
+        - 469.4176069337062
+      timing_data_average_seconds_per_iteration_values:
+        - 0.7362314384786328
+    online_analysis_speed_ns_per_day_first: 469.4176069337062
+    online_analysis_speed_ns_per_day_last: 469.4176069337062
+    online_analysis_speed_ns_per_day_mean: 469.4176069337062
+  -
+    kind: 'remd-cuda-8temps-analysis-10'
+    returncode: 0
+    command:
+      - '/home/yihengwu/miniforge3/envs/cranberry-dev/bin/python'
+      - '-m'
+      - 'cranberry.cli.main'
+      - remd
+      - '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+      - '--steps'
+      - 20000
+      - '--swap-steps'
+      - 100
+      - '--n-replicas'
+      - 8
+      - '--t-min'
+      - 298
+      - '--t-max'
+      - 600
+      - '--n-analysis'
+      - 10
+      - '--output-dir'
+      - 'benchmarks/results/local_cuda_remd_analysis_compare_ggcGCAAgcc_runs/remd_cuda_8temps_analysis_10'
+      - '--platform'
+      - CUDA
+      - '--overwrite'
+    wall_seconds: 176.8912713569589
+    stdout_path: 'benchmarks/results/local_cuda_remd_analysis_compare_ggcGCAAgcc_runs/remd_cuda_8temps_analysis_10/stdout.txt'
+    stderr_path: 'benchmarks/results/local_cuda_remd_analysis_compare_ggcGCAAgcc_runs/remd_cuda_8temps_analysis_10/stderr.txt'
+    gpu_samples: 174
+    gpu_utilization_percent_mean: 61.12068965517241
+    gpu_utilization_percent_max: 77.0
+    gpu_memory_mib_max: 4790.0
+    steps: 20000
+    parallel_processes: 1
+    mps_enabled: false
+    n_replicas: 8
+    n_analysis: 10
+    args_json:
+      actual_platform: CUDA
+      box_padding_nanometer: 2.0
+      checkpoint_interval: 1
+      cranberry_version: 1.0.0a1
+      dcd_mode: replica
+      extra_start_pdb_path: null
+      extra_start_pdb_sha256: null
+      force_groups:
+        - 'bond'
+        - 'angle'
+        - dihedral
+        - wca
+        - electrostatic
+        - 'spline'
+        - pucker
+        - 'stacking35'
+        - 'stacking55'
+        - 'stacking33'
+        - 'pairing'
+      iterations: 200
+      jax_platform_name_env: null
+      mcmc_move: GHMCMove
+      model: 'cranberry-v1-alpha.1'
+      n_analysis: 10
+      n_record: 1000
+      n_replicas: 8
+      online_analysis_interval: 20
+      openmm_version: 8.5.2
+      openmmtools_version: 0.26.0
+      output_dcd_manifest_path: null
+      output_dcd_path: null
+      output_netcdf_path: 'benchmarks/results/local_cuda_remd_analysis_compare_ggcGCAAgcc_runs/remd_cuda_8temps_analysis_10/output.nc'
+      overwrite: true
+      pdb_path: '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+      pdb_sha256: 341f701020c33e4044cd998782b5c127f82da044dbafa424fc7ade5913de420a
+      periodic: false
+      periodic_box_vectors_present: false
+      platform: CUDA
+      requested_n_replicas: 8
+      restart_from: null
+      run_kind: remd
+      salt_millimolar: 150.0
+      sampler: 'ParallelTemperingSampler'
+      schema_version: 1
+      steps: 20000
+      structure_summary:
+        atoms: 80
+        bonds: 99
+        chains: 1
+        residues: 10
+      swap_steps: 100
+      t_max_kelvin: 600.0
+      t_min_kelvin: 298.0
+      temperature_ladder_input_kelvin: null
+      temperature_ladder_kelvin:
+        - 298.00000000000006
+        - 329.33322562677876
+        - 363.9609849051636
+        - 402.22968174871426
+        - 444.52214272864626
+        - 491.26144673608184
+        - 542.9151573143348
+        - 599.9999999999997
+      timestep_femtosecond: 5.0
+      write_dcd: false
+    online_analysis:
+      path: 'benchmarks/results/local_cuda_remd_analysis_compare_ggcGCAAgcc_runs/remd_cuda_8temps_analysis_10/output_real_time_analysis.yaml'
+      iteration_records: 10
+      last_iteration: 200
+      timing_data_ns_per_day_values:
+        - 355.88950585067624
+        - 397.1108877926018
+        - 417.7782291332958
+        - 427.4327548178972
+        - 432.98539775387513
+        - 438.8927432427635
+        - 442.88416073380756
+        - 446.47557525809685
+        - 448.97960316222213
+        - 451.38594119675594
+      timing_data_average_seconds_per_iteration_values:
+        - 0.9710879200383237
+        - 0.8702858839279566
+        - 0.8272331488334527
+        - 0.8085482361950452
+        - 0.7981793422891637
+        - 0.787436122653865
+        - 0.7803394897378606
+        - 0.7740625000599796
+        - 0.7697454351286649
+        - 0.765641922926783
+    online_analysis_speed_ns_per_day_first: 355.88950585067624
+    online_analysis_speed_ns_per_day_last: 451.38594119675594
+    online_analysis_speed_ns_per_day_mean: 425.9814798941992

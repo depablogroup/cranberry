@@ -1,0 +1,273 @@
+schema_version: 1
+generated_at: '2026-07-17T20:54:51.116803+00:00'
+host: 'yihengwu-Precision-3630-Tower'
+pdb: '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+gpu:
+  name: NVIDIA GeForce RTX 2060
+  driver_version: 595.71.05
+  memory_total_mib: 6144.0
+  cuda_visible_devices: null
+notes:
+  - 'OpenMM context creation is included in wall time; speed is also parsed from logs when available.'
+runs:
+  -
+    kind: 'single-md-cuda'
+    returncode: 0
+    command:
+      - '/home/yihengwu/miniforge3/envs/cranberry-dev/bin/python'
+      - '-m'
+      - 'cranberry.cli.main'
+      - md
+      - '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+      - '--steps'
+      - 20000
+      - '--n-record'
+      - 20
+      - '--checkpoint-interval'
+      - 20000
+      - '--output-dir'
+      - 'benchmarks/results/local_cuda_modes_ggcGCAAgcc_runs/single_md_cuda'
+      - '--platform'
+      - CUDA
+    wall_seconds: 19.175811683991924
+    stdout_path: 'benchmarks/results/local_cuda_modes_ggcGCAAgcc_runs/single_md_cuda/stdout.txt'
+    stderr_path: 'benchmarks/results/local_cuda_modes_ggcGCAAgcc_runs/single_md_cuda/stderr.txt'
+    gpu_samples: 19
+    gpu_utilization_percent_mean: 54.473684210526315
+    gpu_utilization_percent_max: 100.0
+    gpu_memory_mib_max: 160.0
+    steps_per_process: 20000
+    parallel_processes: 1
+    mps_enabled: false
+    wall_ns_per_day_per_process: 450.56762875976307
+    aggregate_wall_ns_per_day: 450.56762875976307
+    log_speed_ns_per_day_mean: 819.0
+    log_speed_ns_per_day_values:
+      - 819.0
+  -
+    kind: 'mps-md-cuda-2'
+    returncode: 0
+    command:
+      - parallel
+      - 2
+      - '/home/yihengwu/miniforge3/envs/cranberry-dev/bin/python'
+      - '-m'
+      - 'cranberry.cli.main'
+      - md
+      - '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+      - '--steps'
+      - 20000
+      - '--n-record'
+      - 20
+      - '--checkpoint-interval'
+      - 20000
+      - '--output-dir'
+      - 'benchmarks/results/local_cuda_modes_ggcGCAAgcc_runs/mps_md_2/replica_0'
+      - '--platform'
+      - CUDA
+    wall_seconds: 16.849999728961848
+    stdout_path: 'benchmarks/results/local_cuda_modes_ggcGCAAgcc_runs/mps_md_2/replica_*/stdout.txt'
+    stderr_path: 'benchmarks/results/local_cuda_modes_ggcGCAAgcc_runs/mps_md_2/replica_*/stderr.txt'
+    gpu_samples: 17
+    gpu_utilization_percent_mean: 64.58823529411765
+    gpu_utilization_percent_max: 100.0
+    gpu_memory_mib_max: 270.0
+    steps_per_process: 20000
+    parallel_processes: 2
+    mps_enabled: true
+    wall_ns_per_day_per_process: 512.7596521648326
+    aggregate_wall_ns_per_day: 1025.5193043296651
+    log_speed_ns_per_day_mean: 752.5
+    log_speed_ns_per_day_values:
+      - 752.0
+      - 753.0
+  -
+    kind: 'mps-md-cuda-4'
+    returncode: 0
+    command:
+      - parallel
+      - 4
+      - '/home/yihengwu/miniforge3/envs/cranberry-dev/bin/python'
+      - '-m'
+      - 'cranberry.cli.main'
+      - md
+      - '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+      - '--steps'
+      - 20000
+      - '--n-record'
+      - 20
+      - '--checkpoint-interval'
+      - 20000
+      - '--output-dir'
+      - 'benchmarks/results/local_cuda_modes_ggcGCAAgcc_runs/mps_md_4/replica_0'
+      - '--platform'
+      - CUDA
+    wall_seconds: 19.179572207969613
+    stdout_path: 'benchmarks/results/local_cuda_modes_ggcGCAAgcc_runs/mps_md_4/replica_*/stdout.txt'
+    stderr_path: 'benchmarks/results/local_cuda_modes_ggcGCAAgcc_runs/mps_md_4/replica_*/stderr.txt'
+    gpu_samples: 19
+    gpu_utilization_percent_mean: 70.21052631578948
+    gpu_utilization_percent_max: 100.0
+    gpu_memory_mib_max: 438.0
+    steps_per_process: 20000
+    parallel_processes: 4
+    mps_enabled: true
+    wall_ns_per_day_per_process: 450.47928631118555
+    aggregate_wall_ns_per_day: 1801.9171452447422
+    log_speed_ns_per_day_mean: 670.75
+    log_speed_ns_per_day_values:
+      - 671.0
+      - 671.0
+      - 670.0
+      - 671.0
+  -
+    kind: 'mps-md-cuda-8'
+    returncode: 0
+    command:
+      - parallel
+      - 8
+      - '/home/yihengwu/miniforge3/envs/cranberry-dev/bin/python'
+      - '-m'
+      - 'cranberry.cli.main'
+      - md
+      - '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+      - '--steps'
+      - 20000
+      - '--n-record'
+      - 20
+      - '--checkpoint-interval'
+      - 20000
+      - '--output-dir'
+      - 'benchmarks/results/local_cuda_modes_ggcGCAAgcc_runs/mps_md_8/replica_0'
+      - '--platform'
+      - CUDA
+    wall_seconds: 24.447250141995028
+    stdout_path: 'benchmarks/results/local_cuda_modes_ggcGCAAgcc_runs/mps_md_8/replica_*/stdout.txt'
+    stderr_path: 'benchmarks/results/local_cuda_modes_ggcGCAAgcc_runs/mps_md_8/replica_*/stderr.txt'
+    gpu_samples: 24
+    gpu_utilization_percent_mean: 66.66666666666667
+    gpu_utilization_percent_max: 100.0
+    gpu_memory_mib_max: 774.0
+    steps_per_process: 20000
+    parallel_processes: 8
+    mps_enabled: true
+    wall_ns_per_day_per_process: 353.41398111513456
+    aggregate_wall_ns_per_day: 2827.3118489210765
+    log_speed_ns_per_day_mean: 551.25
+    log_speed_ns_per_day_values:
+      - 553.0
+      - 551.0
+      - 552.0
+      - 550.0
+      - 548.0
+      - 549.0
+      - 554.0
+      - 553.0
+  -
+    kind: 'remd-cuda-8temps'
+    returncode: 0
+    command:
+      - '/home/yihengwu/miniforge3/envs/cranberry-dev/bin/python'
+      - '-m'
+      - 'cranberry.cli.main'
+      - remd
+      - '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+      - '--steps'
+      - 20000
+      - '--swap-steps'
+      - 100
+      - '--n-replicas'
+      - 8
+      - '--t-min'
+      - 298
+      - '--t-max'
+      - 600
+      - '--n-analysis'
+      - 10
+      - '--output-dir'
+      - 'benchmarks/results/local_cuda_modes_ggcGCAAgcc_runs/remd_cuda_8temps'
+      - '--platform'
+      - CUDA
+      - '--overwrite'
+    wall_seconds: 178.15288760594558
+    stdout_path: 'benchmarks/results/local_cuda_modes_ggcGCAAgcc_runs/remd_cuda_8temps/stdout.txt'
+    stderr_path: 'benchmarks/results/local_cuda_modes_ggcGCAAgcc_runs/remd_cuda_8temps/stderr.txt'
+    gpu_samples: 175
+    gpu_utilization_percent_mean: 63.18857142857143
+    gpu_utilization_percent_max: 100.0
+    gpu_memory_mib_max: 4782.0
+    steps: 20000
+    parallel_processes: 1
+    mps_enabled: false
+    n_replicas: 8
+    n_analysis: 10
+    args_json:
+      actual_platform: CUDA
+      box_padding_nanometer: 2.0
+      checkpoint_interval: 1
+      cranberry_version: 1.0.0a1
+      dcd_mode: replica
+      extra_start_pdb_path: null
+      extra_start_pdb_sha256: null
+      force_groups:
+        - 'bond'
+        - 'angle'
+        - dihedral
+        - wca
+        - electrostatic
+        - 'spline'
+        - pucker
+        - 'stacking35'
+        - 'stacking55'
+        - 'stacking33'
+        - 'pairing'
+      iterations: 200
+      jax_platform_name_env: null
+      mcmc_move: GHMCMove
+      model: 'cranberry-v1-alpha.1'
+      n_analysis: 10
+      n_record: 1000
+      n_replicas: 8
+      online_analysis_interval: 20
+      openmm_version: 8.5.2
+      openmmtools_version: 0.26.0
+      output_dcd_manifest_path: null
+      output_dcd_path: null
+      output_netcdf_path: 'benchmarks/results/local_cuda_modes_ggcGCAAgcc_runs/remd_cuda_8temps/output.nc'
+      overwrite: true
+      pdb_path: '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+      pdb_sha256: 341f701020c33e4044cd998782b5c127f82da044dbafa424fc7ade5913de420a
+      periodic: false
+      periodic_box_vectors_present: false
+      platform: CUDA
+      requested_n_replicas: 8
+      restart_from: null
+      run_kind: remd
+      salt_millimolar: 150.0
+      sampler: 'ParallelTemperingSampler'
+      schema_version: 1
+      steps: 20000
+      structure_summary:
+        atoms: 80
+        bonds: 99
+        chains: 1
+        residues: 10
+      swap_steps: 100
+      t_max_kelvin: 600.0
+      t_min_kelvin: 298.0
+      temperature_ladder_input_kelvin: null
+      temperature_ladder_kelvin:
+        - 298.00000000000006
+        - 329.33322562677876
+        - 363.9609849051636
+        - 402.22968174871426
+        - 444.52214272864626
+        - 491.26144673608184
+        - 542.9151573143348
+        - 599.9999999999997
+      timestep_femtosecond: 5.0
+      write_dcd: false
+    online_analysis:
+      path: 'benchmarks/results/local_cuda_modes_ggcGCAAgcc_runs/remd_cuda_8temps/output_real_time_analysis.yaml'
+      iteration_records: 10
+      last_iteration: 200

@@ -18,4 +18,5 @@ docs/_build/
 **/checkpoint.chk
 **/final.pdb
 **/args_history/
-
+# Local benchmark raw run artifacts
+benchmarks/results/*_runs/

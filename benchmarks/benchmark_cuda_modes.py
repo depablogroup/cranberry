@@ -4,9 +4,11 @@ from __future__ import annotations
 import argparse
 import csv
 import os
+import shutil
 import statistics
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from dataclasses import dataclass
@@ -50,8 +52,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skip-single-md", action="store_true")
     parser.add_argument("--skip-mps-md", action="store_true")
     parser.add_argument("--skip-remd", action="store_true")
-    parser.add_argument("--start-mps", action="store_true", help="Start and stop a local CUDA MPS daemon around MPS MD runs.")
-    parser.add_argument("--remd-n-analysis", type=int, default=10, help="Target online-analysis writes for REMD benchmark; 0 disables.")
+    parser.add_argument("--start-mps", action="store_true", help="Start and stop a local CUDA MPS daemon around MPS MD and MPI REMD runs.")
+    parser.add_argument("--remd-mpi-ranks", type=int, default=1, help="Launch REMD through mpirun with this many ranks; 1 runs serially.")
+    parser.add_argument(
+        "--remd-n-analysis",
+        type=int,
+        nargs="*",
+        default=[0, 10],
+        help="Target online-analysis writes for REMD benchmark. Defaults to both disabled and about 10 writes.",
+    )
     args = parser.parse_args(argv)
 
     pdb = args.pdb or data_path(DEFAULT_PDB)
@@ -84,15 +93,21 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     if not args.skip_remd:
-        benchmark["runs"].append(
-            run_remd(
-                pdb,
-                args.work_dir / "remd_cuda_8temps",
-                args.remd_steps,
-                args.remd_n_analysis,
-                args.sample_interval,
-            )
-        )
+        remd_mps_enabled = args.start_mps and args.remd_mpi_ranks > 1
+        with maybe_mps_daemon(args.work_dir / "mps_remd", remd_mps_enabled) as remd_mps_env:
+            for n_analysis in args.remd_n_analysis:
+                benchmark["runs"].append(
+                    run_remd(
+                        pdb,
+                        args.work_dir / f"remd_cuda_8temps_mpi_{args.remd_mpi_ranks}_analysis_{n_analysis}",
+                        args.remd_steps,
+                        n_analysis,
+                        args.sample_interval,
+                        mpi_ranks=args.remd_mpi_ranks,
+                        mps_enabled=remd_mps_enabled,
+                        extra_env=remd_mps_env,
+                    )
+                )
 
     args.output.write_text(to_yaml(benchmark))
     print(f"wrote {args.output}")
@@ -124,8 +139,20 @@ def run_mps_md_series(
     return summaries
 
 
-def run_remd(pdb: Path, outdir: Path, steps: int, n_analysis: int, sample_interval: float) -> dict[str, Any]:
-    command = [
+def run_remd(
+    pdb: Path,
+    outdir: Path,
+    steps: int,
+    n_analysis: int,
+    sample_interval: float,
+    *,
+    mpi_ranks: int = 1,
+    mps_enabled: bool = False,
+    extra_env: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    if mpi_ranks < 1:
+        raise ValueError("mpi_ranks must be at least 1")
+    base_command = [
         sys.executable,
         "-m",
         "cranberry.cli.main",
@@ -149,19 +176,46 @@ def run_remd(pdb: Path, outdir: Path, steps: int, n_analysis: int, sample_interv
         "CUDA",
         "--overwrite",
     ]
-    result, samples = run_monitored(command, outdir, sample_interval)
-    summary = base_summary("remd-cuda-8temps", result, samples)
+    command = base_command
+    env = dict(extra_env or {})
+    if mpi_ranks > 1:
+        mpirun = shutil.which("mpirun")
+        if mpirun is None:
+            raise RuntimeError("mpirun is required when --remd-mpi-ranks is greater than 1")
+        command = [mpirun, "--oversubscribe", "-n", str(mpi_ranks)] + base_command
+        env["OPENMMTOOLS_ENABLE_MPI"] = "1"
+    result, samples = run_monitored(command, outdir, sample_interval, extra_env=env)
+    online_analysis = parse_openmmtools_yaml(outdir / "output_real_time_analysis.yaml")
+    summary = base_summary(f"remd-cuda-8temps-mpi-{mpi_ranks}-analysis-{n_analysis}", result, samples)
     summary.update(
         {
             "steps": steps,
-            "parallel_processes": 1,
-            "mps_enabled": False,
+            "parallel_processes": mpi_ranks,
+            "mps_enabled": mps_enabled,
             "n_replicas": 8,
             "n_analysis": n_analysis,
             "args_json": read_json_like(outdir / "args.json"),
-            "online_analysis": parse_openmmtools_yaml(outdir / "output_real_time_analysis.yaml"),
+            "online_analysis": online_analysis,
         }
     )
+    if online_analysis is not None:
+        speed_values = online_analysis["timing_data_ns_per_day_values"]
+        last_aggregate_speed = speed_values[-1] if speed_values else None
+        mean_aggregate_speed = statistics.mean(speed_values) if speed_values else None
+        summary.update(
+            {
+                "online_analysis_aggregate_speed_ns_per_day_first": speed_values[0] if speed_values else None,
+                "online_analysis_aggregate_speed_ns_per_day_last": last_aggregate_speed,
+                "online_analysis_aggregate_speed_ns_per_day_mean": mean_aggregate_speed,
+                "online_analysis_speed_ns_per_day_first": speed_values[0] if speed_values else None,
+                "online_analysis_speed_ns_per_day_last": last_aggregate_speed,
+                "online_analysis_speed_ns_per_day_mean": mean_aggregate_speed,
+                "online_analysis_per_runner_speed_ns_per_day_last": last_aggregate_speed / mpi_ranks if last_aggregate_speed is not None else None,
+                "online_analysis_per_runner_speed_ns_per_day_mean": mean_aggregate_speed / mpi_ranks if mean_aggregate_speed is not None else None,
+                "online_analysis_per_replica_speed_ns_per_day_last": last_aggregate_speed / 8 if last_aggregate_speed is not None else None,
+                "online_analysis_per_replica_speed_ns_per_day_mean": mean_aggregate_speed / 8 if mean_aggregate_speed is not None else None,
+            }
+        )
     return summary
 
 
@@ -253,6 +307,8 @@ def md_run_summary(kind: str, result: CommandResult, samples: list[GpuSample], o
             "mps_enabled": mps_enabled,
             "wall_ns_per_day_per_process": wall_ns_per_day_per_process,
             "aggregate_wall_ns_per_day": wall_ns_per_day_per_process * parallel_processes,
+            "log_speed_ns_per_day_per_runner_mean": statistics.mean(speed_values) if speed_values else None,
+            "log_speed_ns_per_day_aggregate": sum(speed_values) if speed_values else None,
             "log_speed_ns_per_day_mean": statistics.mean(speed_values) if speed_values else None,
             "log_speed_ns_per_day_values": speed_values,
         }
@@ -333,6 +389,8 @@ def parse_openmmtools_yaml(path: Path) -> dict[str, Any] | None:
         return None
     text = path.read_text(errors="replace")
     iterations = []
+    ns_per_day_values = []
+    average_seconds_per_iteration_values = []
     for line in text.splitlines():
         stripped = line.strip()
         if stripped.startswith("- iteration:"):
@@ -340,10 +398,20 @@ def parse_openmmtools_yaml(path: Path) -> dict[str, Any] | None:
             parsed = parse_float(value)
             if parsed is not None:
                 iterations.append(int(parsed))
+        elif stripped.startswith("ns_per_day:"):
+            parsed = parse_float(stripped.split(":", 1)[1].strip())
+            if parsed is not None:
+                ns_per_day_values.append(parsed)
+        elif stripped.startswith("average_seconds_per_iteration:"):
+            parsed = parse_float(stripped.split(":", 1)[1].strip())
+            if parsed is not None:
+                average_seconds_per_iteration_values.append(parsed)
     return {
         "path": str(path),
         "iteration_records": len(iterations),
         "last_iteration": iterations[-1] if iterations else None,
+        "timing_data_ns_per_day_values": ns_per_day_values,
+        "timing_data_average_seconds_per_iteration_values": average_seconds_per_iteration_values,
     }
 
 
@@ -364,8 +432,10 @@ class maybe_mps_daemon:
     def __enter__(self) -> dict[str, str]:
         if not self.enabled:
             return {}
-        pipe_dir = self.directory / "pipe"
-        log_dir = self.directory / "log"
+        self.directory.mkdir(parents=True, exist_ok=True)
+        runtime_dir = Path(tempfile.mkdtemp(prefix="cranberry-mps-", dir="/tmp"))
+        pipe_dir = runtime_dir / "pipe"
+        log_dir = runtime_dir / "log"
         pipe_dir.mkdir(parents=True, exist_ok=True)
         log_dir.mkdir(parents=True, exist_ok=True)
         self.env = {
