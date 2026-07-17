@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import subprocess
+import sys
 import warnings
+from pathlib import Path
 
 import pytest
 from openmm import app, unit
@@ -70,8 +75,6 @@ def test_run_remd_and_translate_real_openmmtools(tmp_path):
     assert isinstance(output_dcds, tuple)
     assert (tmp_path / 'output_0.dcd').exists()
     assert (tmp_path / 'output_1.dcd').exists()
-
-
 
 
 @pytest.mark.remd
@@ -182,3 +185,66 @@ def test_run_remd_rejects_ladder_mismatch_on_restart(tmp_path):
                 overwrite=True,
             )
         )
+
+
+@pytest.mark.remd
+def test_run_remd_mpi_restart_reopens_existing_storage(tmp_path):
+    """Reproduce the MPI NetCDF restart-open failure tracked in issue #9."""
+
+    mpirun = shutil.which('mpirun')
+    if mpirun is None:
+        pytest.skip('mpirun is required for the MPI REMD restart regression')
+
+    pdb = data_path('examples/2ntCG_cg_vs_conect.pdb')
+    first = run_remd(
+        RemdRunConfig(
+            pdb_path=pdb,
+            steps=1,
+            output_dir=tmp_path,
+            temperature_ladder=TemperatureLadderSpec(temperatures=(298.0, 318.0)),
+            swap_steps=1,
+            overwrite=True,
+        )
+    )
+
+    env = os.environ.copy()
+    env['OPENMMTOOLS_ENABLE_MPI'] = '1'
+    command = [
+        mpirun,
+        '-n',
+        '2',
+        sys.executable,
+        '-m',
+        'cranberry.cli.main',
+        'remd',
+        str(pdb),
+        '--steps',
+        '1',
+        '--swap-steps',
+        '1',
+        '--temperature-ladder',
+        '298',
+        '318',
+        '--restart-from',
+        str(first.output_netcdf_path),
+        '--platform',
+        'CPU',
+        '--overwrite',
+    ]
+
+    completed = subprocess.run(
+        command,
+        cwd=Path(__file__).resolve().parents[1],
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=120,
+        check=False,
+    )
+
+    assert completed.returncode == 0, (
+        'MPI REMD restart failed while reopening existing OpenMMTools NetCDF storage.\n'
+        f'command: {command}\n'
+        f'stdout:\n{completed.stdout}\n'
+        f'stderr:\n{completed.stderr}'
+    )

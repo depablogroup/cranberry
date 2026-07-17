@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>REMD MPI Restart Reproducer Report</title>
+</head>
+<body>
+<main>
+  <h1>REMD MPI Restart Reproducer Report</h1>
+  <p>This report records the regression test added for GitHub issue #9. The test intentionally uses a real OpenMMTools REMD storage file and a real OpenMPI/mpi4py launch instead of fake reporter classes.</p>
+
+  <h2>Change</h2>
+  <ul>
+    <li>Added <code>test_run_remd_mpi_restart_reopens_existing_storage</code> in <code>tests/test_remd.py</code>.</li>
+    <li>The test creates a one-step serial REMD storage file with <code>run_remd</code>.</li>
+    <li>It then launches <code>mpirun -n 2 python -m cranberry.cli.main remd ... --restart-from output.nc</code> with <code>OPENMMTOOLS_ENABLE_MPI=1</code>.</li>
+    <li>Updated GitHub Actions CI to install <code>openmpi</code> and <code>mpi4py</code> so the regression runs in CI.</li>
+  </ul>
+
+  <h2>Expected Current Result</h2>
+  <p>The test is expected to fail on current <code>main</code>. It reproduces the same OpenMMTools restart-open failure seen in production:</p>
+  <pre><code>OSError: [Errno -101] NetCDF: HDF error: '.../output.nc'
+openmmtools.multistate.multistatesampler.py: from_storage
+mpiplus.run_single_node(... sampler._reporter.open, mode='a' ...)</code></pre>
+
+  <h2>Validation</h2>
+  <ul>
+    <li><code>conda run -n cranberry-dev which mpirun</code> found <code>/home/yihengwu/miniforge3/envs/cranberry-dev/bin/mpirun</code>.</li>
+    <li><code>conda run -n cranberry-dev python -c "import mpi4py, openmmtools, mpiplus"</code> passed with mpi4py 4.1.2 and OpenMMTools 0.26.0.</li>
+    <li><code>conda run -n cranberry-dev mpirun -n 2 python -c "from mpi4py import MPI; ..."</code> reported size 2.</li>
+    <li><code>conda run -n cranberry-dev python -m pytest -q tests/test_remd.py::test_run_remd_mpi_restart_reopens_existing_storage</code> failed as intended with the NetCDF HDF restart error.</li>
+  </ul>
+
+  <h2>Follow-Up</h2>
+  <p>The next fix should make this test pass by closing Cranberry's read-only validation reporter before storage restore and by synchronizing MPI restore/open ordering before rank 0 opens append mode.</p>
+</main>
+</body>
+</html>

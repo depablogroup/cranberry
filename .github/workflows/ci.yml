@@ -32,7 +32,7 @@ jobs:
           channel-priority: strict
 
       - name: Install REMD dependencies
-        run: conda install -y pip setuptools wheel openmm openmmtools h5py pytest pre-commit build sphinx myst-parser
+        run: conda install -y pip setuptools wheel openmm openmmtools openmpi mpi4py h5py pytest pre-commit build sphinx myst-parser
 
       - name: Install cranberry package
         run: python -m pip install --no-deps -e ".[dev,remd]"
