@@ -108,6 +108,13 @@ class RemdRunResult:
     jax_platform_name_env: str | None
 
 
+@dataclass(frozen=True)
+class _MpiRuntime:
+    enabled: bool = False
+    rank: int = 0
+    size: int = 1
+
+
 def run_remd(config: RemdRunConfig) -> RemdRunResult:
     """Run replica exchange MD through the optional OpenMMTools stack."""
 
@@ -164,6 +171,8 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
     )
     validate_periodic_box_cutoffs(system)
     openmmtools, mcmc, states, multistate = _load_openmmtools()
+    mpiplus = _load_mpiplus()
+    mpi_runtime = _detect_mpi_runtime(mpiplus)
     move = mcmc.GHMCMove(timestep=config.timestep_femtosecond * unit.femtosecond, n_steps=config.swap_steps)
     sampler_cls = multistate.ParallelTemperingSampler
     actual_platform = None
@@ -212,14 +221,17 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
         _close_if_present(reporter)
     else:
         reporter = multistate.MultiStateReporter(str(output_netcdf_path), open_mode='r', checkpoint_interval=checkpoint_interval)
-        stored_temperatures = _read_temperatures_from_reporter(reporter)
-        expected_temperatures = _expected_temperatures(ladder_spec)
-        if stored_temperatures != expected_temperatures:
-            raise ValueError(
-                'REMD restart ladder does not match the existing NetCDF storage: '
-                f'expected {expected_temperatures}, found {stored_temperatures}'
-            )
-        sampler = sampler_cls.from_storage(str(output_netcdf_path))
+        try:
+            stored_temperatures = _read_temperatures_from_reporter(reporter)
+            expected_temperatures = _expected_temperatures(ladder_spec)
+            if stored_temperatures != expected_temperatures:
+                raise ValueError(
+                    'REMD restart ladder does not match the existing NetCDF storage: '
+                    f'expected {expected_temperatures}, found {stored_temperatures}'
+                )
+        finally:
+            _close_if_present(reporter)
+        sampler = _sampler_from_storage(sampler_cls, output_netcdf_path, mpiplus, mpi_runtime)
         _apply_sampler_platform(sampler, openmmtools, config.platform)
         reference_state = states.ThermodynamicState(system, temperature=stored_temperatures[0] * unit.kelvin)
         actual_platform = _actual_sampler_platform(sampler, reference_state)
@@ -244,7 +256,6 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
             ),
         )
         sampler.extend(n_iterations)
-        _close_if_present(reporter)
 
     output_dcd_path = None
     output_dcd_manifest_path = None
@@ -394,6 +405,62 @@ def _load_openmmtools():
     except ImportError as exc:  # pragma: no cover - exercised in environments without the extra
         raise ImportError("REMD requires the optional 'remd' extra (openmmtools).") from exc
     return openmmtools, mcmc, states, multistate
+
+
+def _load_mpiplus():
+    try:
+        import mpiplus
+    except ImportError:
+        return None
+    return mpiplus
+
+
+def _detect_mpi_runtime(mpiplus) -> _MpiRuntime:
+    if mpiplus is None:
+        return _MpiRuntime()
+    try:
+        comm = mpiplus.get_mpicomm()
+    except Exception:
+        return _MpiRuntime()
+    if comm is None:
+        return _MpiRuntime()
+
+    rank_getter = getattr(comm, 'Get_rank', None)
+    size_getter = getattr(comm, 'Get_size', None)
+    rank = rank_getter() if callable(rank_getter) else getattr(comm, 'rank', 0)
+    size = size_getter() if callable(size_getter) else getattr(comm, 'size', 1)
+    return _MpiRuntime(enabled=int(size) > 1, rank=int(rank), size=int(size))
+
+
+def _sampler_from_storage(sampler_cls, storage_path: Path, mpiplus, mpi_runtime: _MpiRuntime):
+    if mpiplus is None or not mpi_runtime.enabled:
+        return sampler_cls.from_storage(str(storage_path))
+
+    reporter = sampler_cls._reporter_from_storage(str(storage_path), check_exist=True)
+    try:
+        reporter.open(mode='r')
+        sampler = sampler_cls._instantiate_sampler_from_reporter(reporter)
+        sampler._restore_sampler_from_reporter(reporter)
+    finally:
+        reporter.close()
+
+    _mpi_barrier(mpiplus)
+    sampler._reporter = reporter
+    mpiplus.run_single_node(0, sampler._reporter.open, mode='a', broadcast_result=False, sync_nodes=True)
+    return sampler
+
+
+def _mpi_barrier(mpiplus) -> None:
+    comm = mpiplus.get_mpicomm()
+    if comm is None:
+        return
+    barrier = getattr(comm, 'barrier', None)
+    if callable(barrier):
+        barrier()
+        return
+    barrier = getattr(comm, 'Barrier', None)
+    if callable(barrier):
+        barrier()
 
 
 def _initial_positions(pdb: app.PDBFile, primary_positions, extra_start_pdb: Path | None, *, periodic: bool, box_padding):

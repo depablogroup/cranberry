@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>REMD MPI Restart Fix Report</title>
+</head>
+<body>
+<main>
+  <h1>REMD MPI Restart Fix Report</h1>
+  <p>This report covers the minimal fix for the MPI REMD NetCDF restart-open failure reproduced by <code>test_run_remd_mpi_restart_reopens_existing_storage</code>.</p>
+
+  <h2>Problem</h2>
+  <p>Current <code>cranberry remd --restart-from output.nc</code> opened a Cranberry-owned read-only <code>MultiStateReporter</code> to validate the stored temperature ladder, then called OpenMMTools <code>ParallelTemperingSampler.from_storage()</code> while that reporter was still open. Under MPI, OpenMMTools also reopens the same storage in read mode on all ranks and then rank 0 opens append mode. This can fail with <code>NetCDF: HDF error</code>.</p>
+
+  <h2>Fix</h2>
+  <ul>
+    <li>Close Cranberry's read-only validation reporter in a <code>finally</code> block before sampler restoration.</li>
+    <li>Add a tiny MPI runtime detector using optional <code>mpiplus</code>.</li>
+    <li>Keep non-MPI behavior delegated to OpenMMTools <code>from_storage()</code>.</li>
+    <li>For MPI restarts, mirror OpenMMTools restore: read/restore/close on all ranks, run an MPI barrier, then let rank 0 reopen append mode with <code>sync_nodes=True</code>.</li>
+  </ul>
+
+  <h2>Key Code</h2>
+  <pre><code>try:
+    stored_temperatures = _read_temperatures_from_reporter(reporter)
+    ...
+finally:
+    _close_if_present(reporter)
+
+sampler = _sampler_from_storage(sampler_cls, output_netcdf_path, mpiplus, mpi_runtime)</code></pre>
+
+  <pre><code>reporter.open(mode='r')
+sampler = sampler_cls._instantiate_sampler_from_reporter(reporter)
+sampler._restore_sampler_from_reporter(reporter)
+reporter.close()
+
+_mpi_barrier(mpiplus)
+mpiplus.run_single_node(0, sampler._reporter.open, mode='a', sync_nodes=True)</code></pre>
+
+  <h2>Validation</h2>
+  <ul>
+    <li><code>conda run -n cranberry-dev python -m py_compile cranberry/remd.py tests/test_remd.py</code> passed.</li>
+    <li><code>conda run -n cranberry-dev python -m pytest -q tests/test_remd.py::test_run_remd_mpi_restart_reopens_existing_storage</code> passed: 1 passed, 1 existing NumPy ABI warning.</li>
+    <li><code>conda run -n cranberry-dev python -m pytest -q tests/test_remd.py</code> passed: 10 passed, 1 existing NumPy ABI warning.</li>
+  </ul>
+
+  <h2>Scope</h2>
+  <p>This intentionally does not add the broader HPC launch scripts, platform-property plumbing, or runtime metadata from the existing mitigation branch. It only changes REMD restart storage-open ordering.</p>
+</main>
+</body>
+</html>
