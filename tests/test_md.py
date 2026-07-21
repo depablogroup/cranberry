@@ -3,6 +3,7 @@ import json
 import pytest
 from openmm import app, unit
 
+import cranberry.md as md_module
 from cranberry.data import data_path
 from cranberry.forcefield import CranberryForceField, validate_periodic_box_cutoffs
 from cranberry.md import calculate_langevin_friction, create_simulation, run_md
@@ -250,6 +251,29 @@ def test_run_md_restarts_from_checkpoint_and_appends_outputs(tmp_path):
     log_lines = [line for line in second.log_path.read_text().splitlines() if not line.startswith("#")]
     assert [line.split(",", 1)[0] for line in log_lines] == ["1", "2"]
     assert second.dcd_path.stat().st_size > initial_dcd_size
+
+
+def test_run_md_restart_skips_minimization(tmp_path, monkeypatch):
+    pdb = data_path("examples/2ntCG_cg_vs_conect.pdb")
+    first = run_md(pdb, steps=1, report_interval=1, output_dir=tmp_path, platform="CPU")
+
+    def fail_minimization(*args, **kwargs):
+        raise AssertionError("restart should continue from checkpoint without minimization")
+
+    monkeypatch.setattr(md_module, "_minimize_and_report", fail_minimization)
+    second = run_md(
+        pdb,
+        steps=1,
+        report_interval=1,
+        output_dir=tmp_path,
+        restart_from=first.checkpoint_path,
+        platform="CPU",
+        write_minimization_report=True,
+    )
+
+    args = json.loads(second.args_path.read_text())
+    assert second.minimization_report_path is None
+    assert args["write_minimization_report"] is False
 
 
 def test_run_md_restart_missing_outputs_warns_and_creates_files(tmp_path):
