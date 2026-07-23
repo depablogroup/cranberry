@@ -32,7 +32,7 @@ The serial REMD rows below use one Python process, so `mpiplus` does not distrib
 | MPI REMD CUDA | 8 | yes | cpu | 0 | 46.46% | 1280.51 ns/day | 160.06 ns/day | 160.06 ns/day | 86.81 s | failed after timing: MPI post-run reporter read |
 | MPI REMD CUDA | 8 | yes | cpu | 10 | 44.28% | 1533.26 ns/day last, 1215.65 mean | 191.66 ns/day last | 191.66 ns/day last | 66.31 s | failed after timing: MPI post-run reporter read |
 
-Source summaries: `local_cuda_remd_analysis_compare_ggcGCAAgcc.yaml`, `local_cuda_remd_mpi_mps_analysis_compare_ggcGCAAgcc.yaml`, and `local_cuda_remd_mpi_mps_jaxcpu_analysis_compare_ggcGCAAgcc.yaml`.
+Source summaries: `local_cuda_remd_analysis_compare_ggcGCAAgcc.yaml`, `local_cuda_remd_mpi_mps_analysis_compare_ggcGCAAgcc.yaml`, and `local_cuda_remd_mpi_mps_jaxcpu_analysis_compare_ggcGCAAgcc.yaml`. Future default REMD benchmarks should use `--remd-n-analysis 0`; the `n_analysis=10` rows are kept here only as an overhead comparison snapshot.
 
 For a real 8-temperature GPU REMD run, use MPI plus MPS, for example:
 
@@ -40,7 +40,7 @@ For a real 8-temperature GPU REMD run, use MPI plus MPS, for example:
 JAX_PLATFORM_NAME=cpu conda run -n cranberry-dev python benchmarks/benchmark_cuda_modes.py \
   --skip-single-md --skip-mps-md \
   --remd-steps 20000 \
-  --remd-n-analysis 0 10 \
+  --remd-n-analysis 0 \
   --remd-mpi-ranks 8 \
   --start-mps \
   --output benchmarks/results/local_cuda_remd_mpi_mps_jaxcpu_analysis_compare_ggcGCAAgcc.yaml \

@@ -13,7 +13,7 @@
     <li>MD rows record per-runner log speed and aggregate log/wall speed.</li>
     <li>REMD rows parse OpenMMTools <code>output_real_time_analysis.yaml</code>; its <code>timing_data.ns_per_day</code> is aggregate REMD throughput.</li>
     <li>The REMD benchmark can launch through <code>mpirun --oversubscribe -n N</code> with <code>OPENMMTOOLS_ENABLE_MPI=1</code>; <code>--start-mps</code> starts CUDA MPS for multi-rank GPU packing.</li>
-    <li>The benchmark default compares REMD <code>--n-analysis 0</code> and <code>--n-analysis 10</code>. Cranberry's package default remains <code>n_analysis=0</code>.</li>
+    <li>The benchmark default uses REMD <code>--n-analysis 0</code>, which still lets OpenMMTools write one final timing estimate. Cranberry's package default also remains <code>n_analysis=0</code>.</li>
   </ul>
 
   <h2>MD/MPS Results</h2>

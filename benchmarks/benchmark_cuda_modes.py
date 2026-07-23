@@ -58,8 +58,8 @@ def main(argv: list[str] | None = None) -> int:
         "--remd-n-analysis",
         type=int,
         nargs="*",
-        default=[0, 10],
-        help="Target online-analysis writes for REMD benchmark. Defaults to both disabled and about 10 writes.",
+        default=[0],
+        help="Target online-analysis writes for REMD benchmark. Defaults to 0, which still lets OpenMMTools write one final timing estimate.",
     )
     args = parser.parse_args(argv)
 
