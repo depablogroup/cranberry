@@ -21,6 +21,20 @@ from cranberry.remd import (
 )
 
 
+def _mpirun_or_skip() -> str:
+    mpirun = shutil.which('mpirun')
+    if mpirun is None:
+        pytest.skip('mpirun is required for MPI REMD regression tests')
+    return mpirun
+
+
+def _mpi_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env['OPENMMTOOLS_ENABLE_MPI'] = '1'
+    env.setdefault('JAX_PLATFORM_NAME', 'cpu')
+    return env
+
+
 @pytest.mark.remd
 def test_temperature_ladder_spec_default_uses_openmmtools_schedule():
     spec = TemperatureLadderSpec()
@@ -191,9 +205,7 @@ def test_run_remd_rejects_ladder_mismatch_on_restart(tmp_path):
 def test_run_remd_mpi_restart_reopens_existing_storage(tmp_path):
     """Reproduce the MPI NetCDF restart-open failure tracked in issue #9."""
 
-    mpirun = shutil.which('mpirun')
-    if mpirun is None:
-        pytest.skip('mpirun is required for the MPI REMD restart regression')
+    mpirun = _mpirun_or_skip()
 
     pdb = data_path('examples/2ntCG_cg_vs_conect.pdb')
     first = run_remd(
@@ -207,8 +219,6 @@ def test_run_remd_mpi_restart_reopens_existing_storage(tmp_path):
         )
     )
 
-    env = os.environ.copy()
-    env['OPENMMTOOLS_ENABLE_MPI'] = '1'
     command = [
         mpirun,
         '--oversubscribe',
@@ -236,7 +246,7 @@ def test_run_remd_mpi_restart_reopens_existing_storage(tmp_path):
     completed = subprocess.run(
         command,
         cwd=Path(__file__).resolve().parents[1],
-        env=env,
+        env=_mpi_env(),
         text=True,
         capture_output=True,
         timeout=120,
@@ -249,3 +259,111 @@ def test_run_remd_mpi_restart_reopens_existing_storage(tmp_path):
         f'stdout:\n{completed.stdout}\n'
         f'stderr:\n{completed.stderr}'
     )
+
+
+@pytest.mark.remd
+@pytest.mark.xfail(
+    reason='Fresh MPI REMD currently lets non-root ranks read reporter thermodynamic states after sampling.',
+    strict=True,
+)
+def test_run_remd_mpi_fresh_run_postprocess_is_rank_safe(tmp_path):
+    """Expose the fresh-run MPI post-processing bug without fixing it yet."""
+
+    mpirun = _mpirun_or_skip()
+    pdb = data_path('examples/2ntCG_cg_vs_conect.pdb')
+    command = [
+        mpirun,
+        '--oversubscribe',
+        '-n',
+        '2',
+        sys.executable,
+        '-m',
+        'cranberry.cli.main',
+        'remd',
+        str(pdb),
+        '--steps',
+        '1',
+        '--swap-steps',
+        '1',
+        '--temperature-ladder',
+        '298',
+        '318',
+        '--output-dir',
+        str(tmp_path),
+        '--platform',
+        'CPU',
+        '--overwrite',
+    ]
+
+    completed = subprocess.run(
+        command,
+        cwd=Path(__file__).resolve().parents[1],
+        env=_mpi_env(),
+        text=True,
+        capture_output=True,
+        timeout=120,
+        check=False,
+    )
+
+    assert completed.returncode == 0, (
+        'Fresh MPI REMD should finish post-run metadata collection on all ranks.\n'
+        f'command: {command}\n'
+        f'stdout:\n{completed.stdout}\n'
+        f'stderr:\n{completed.stderr}'
+    )
+
+
+@pytest.mark.remd
+@pytest.mark.xfail(
+    reason='MPI remd-extract currently runs serial extraction and stdout on every rank instead of root only.',
+    strict=True,
+)
+def test_remd_extract_mpi_runs_only_on_root_rank(tmp_path):
+    """Expose MPI-duplicated DCD extraction without changing extraction behavior."""
+
+    mpirun = _mpirun_or_skip()
+    pdb = data_path('examples/2ntCG_cg_vs_conect.pdb')
+    result = run_remd(
+        RemdRunConfig(
+            pdb_path=pdb,
+            steps=1,
+            output_dir=tmp_path / 'source',
+            temperature_ladder=TemperatureLadderSpec(temperatures=(298.0, 318.0)),
+            swap_steps=1,
+            overwrite=True,
+        )
+    )
+    output_dir = tmp_path / 'extract'
+    command = [
+        mpirun,
+        '--oversubscribe',
+        '-n',
+        '2',
+        sys.executable,
+        '-m',
+        'cranberry.cli.main',
+        'remd-extract',
+        str(result.output_netcdf_path),
+        str(pdb),
+        '--output-dir',
+        str(output_dir),
+        '--overwrite',
+    ]
+
+    completed = subprocess.run(
+        command,
+        cwd=Path(__file__).resolve().parents[1],
+        env=_mpi_env(),
+        text=True,
+        capture_output=True,
+        timeout=120,
+        check=False,
+    )
+
+    assert completed.returncode == 0, (
+        'MPI remd-extract should not fail when launched under mpirun.\n'
+        f'command: {command}\n'
+        f'stdout:\n{completed.stdout}\n'
+        f'stderr:\n{completed.stderr}'
+    )
+    assert completed.stdout.count('remd-extract mode: replica') == 1
