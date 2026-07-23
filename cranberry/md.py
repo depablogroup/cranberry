@@ -132,6 +132,7 @@ def run_md(
     if restart_from_path is not None and not restart_from_path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {restart_from_path}")
     output_dir.mkdir(parents=True, exist_ok=True)
+    minimization_report_path = (output_dir / "minimization_report.json") if write_minimization_report and restart_from_path is None else None
     result = MDRunResult(
         output_dir=output_dir,
         dcd_path=output_dir / "output.dcd",
@@ -145,7 +146,7 @@ def run_md(
         report_interval=report_interval,
         checkpoint_interval=checkpoint_interval,
         n_record=n_record,
-        minimization_report_path=(output_dir / "minimization_report.json") if write_minimization_report else None,
+        minimization_report_path=minimization_report_path,
         actual_platform=None,
     )
     append_outputs = restart_from_path is not None
@@ -193,7 +194,7 @@ def run_md(
         log_append=log_append,
         detailed_append=detailed_append,
         overwrite=overwrite,
-        write_minimization_report=write_minimization_report,
+        write_minimization_report=minimization_report_path is not None,
         periodic=periodic,
         box_padding=box_padding,
         enforce_periodic_output=enforce_periodic_output,
@@ -264,12 +265,15 @@ def run_md(
     simulation.reporters.append(DetailedEnergyReporter(result.detailed_log_path, report_interval, append=detailed_append))
     simulation.reporters.append(app.CheckpointReporter(str(result.checkpoint_path), result.checkpoint_interval))
 
-    minimization_summary = _minimize_and_report(simulation, result.minimization_report_path)
-    print(
-        "minimization: "
-        f"potential_energy_before={minimization_summary['before_kj_per_mol']:.8f} kJ/mol, "
-        f"after={minimization_summary['after_kj_per_mol']:.8f} kJ/mol"
-    )
+    if restart_from_path is None:
+        minimization_summary = _minimize_and_report(simulation, result.minimization_report_path)
+        print(
+            "minimization: "
+            f"potential_energy_before={minimization_summary['before_kj_per_mol']:.8f} kJ/mol, "
+            f"after={minimization_summary['after_kj_per_mol']:.8f} kJ/mol"
+        )
+    else:
+        print(f"minimization: skipped on restart from {restart_from_path}")
 
     simulation.step(steps)
     simulation.saveCheckpoint(str(result.checkpoint_path))
@@ -482,4 +486,3 @@ class DetailedEnergyReporter:
             self.close()
         except Exception:
             pass
-
