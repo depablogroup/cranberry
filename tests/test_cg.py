@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from shutil import copyfile
 
 from openmm import app, unit
 
@@ -42,7 +43,6 @@ def _atom_positions(path):
     return {
         _normalized_atom_key(atom, residue_y_atoms): values[atom.index]
         for atom in pdb.topology.atoms()
-        if atom.name != 'BN'
     }
 
 
@@ -80,6 +80,18 @@ def _residue_atom_names(path):
             residue_names.append(name)
         names.append(sorted(residue_names))
     return names
+
+
+def test_coarse_grain_structure_uses_cg_vs_conect_default_name(tmp_path):
+    source = data_path("examples/aa/1zih/1zih.pdb")
+    input_path = tmp_path / "1zih.pdb"
+    copyfile(source, input_path)
+
+    result = coarse_grain_structure(input_path)
+
+    assert result.output_path == tmp_path / "1zih_cg_vs_conect.pdb"
+    assert result.output_path.exists()
+    assert not (tmp_path / "1zih_cg.pdb").exists()
 
 
 def test_coarse_grain_structure_matches_packaged_1zih(tmp_path):

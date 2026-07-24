@@ -41,6 +41,10 @@ _OUTPUT_ELEMENTS = {
     "BN": app.element.neon,
 }
 
+# Legacy virtual-site placement used coordinates in Angstrom with a 0.1 scale.
+# Cranberry stores OpenMM positions in nanometers, so the equivalent scale is 1.0.
+_BN_CROSS_PRODUCT_SCALE = 1.0
+
 
 @dataclass(frozen=True)
 class CoarseGrainResult:
@@ -211,7 +215,7 @@ def _virtual_site_normal(new_positions_by_name: dict[str, Vec3], residue_name: s
     p2 = new_positions_by_name[b2]
     p3 = new_positions_by_name[b3]
     cog = (p1 + p2 + p3) / 3.0
-    return cog + _cross(p2 - p1, p3 - p1) * 0.1
+    return cog + _cross(p2 - p1, p3 - p1) * _BN_CROSS_PRODUCT_SCALE
 
 
 def _cross(left: Vec3, right: Vec3) -> Vec3:

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CRANBERRY CG BN Placement And Output Name Fix</title>
+  <style>
+    :root { --ink:#17212b; --muted:#5d6975; --line:#d8e0e8; --soft:#f6f8fb; --code:#101820; --ok:#137348; --warn:#9a5b00; }
+    body { margin:0; color:var(--ink); font:15px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:white; }
+    main { max-width:1040px; margin:0 auto; padding:36px 28px 72px; }
+    h1 { margin:0 0 10px; font-size:30px; line-height:1.15; }
+    h2 { margin:30px 0 12px; padding-top:20px; border-top:1px solid var(--line); font-size:21px; }
+    p { margin:0 0 12px; color:var(--muted); }
+    code, pre { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace; }
+    pre { margin:10px 0 0; padding:13px 15px; overflow:auto; color:#edf5ff; background:var(--code); border-radius:8px; font-size:13px; }
+    ul { margin:8px 0 0 20px; padding:0; }
+    li { margin:5px 0; }
+    .ok { color:var(--ok); font-weight:700; }
+    .warn { color:var(--warn); font-weight:700; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>CRANBERRY CG BN Placement And Output Name Fix</h1>
+  <p>Developer review note for the coarse-graining bug fix tied to GitHub issue #14 and the CLI default output-name mismatch reported during local testing.</p>
+
+  <h2>What Changed</h2>
+  <ul>
+    <li><code>cranberry/cg.py</code>: converted the BN virtual-site cross-product scale from the legacy Angstrom convention to Cranberry's nanometer coordinate convention.</li>
+    <li><code>cranberry/cli/main.py</code>: stopped overriding the library default output path for <code>cranberry cg</code>, so the CLI now writes <code>&lt;input&gt;_cg_vs_conect.pdb</code> by default.</li>
+    <li><code>tests/test_cg.py</code>: restored BN to the 1zih coordinate regression and added an API-level default-output-name regression.</li>
+    <li><code>tests/test_cli.py</code>: added a CLI-level default-output-name regression.</li>
+  </ul>
+
+  <h2>Important Code Paths</h2>
+  <pre><code># cranberry/cg.py
+# Legacy virtual-site placement used coordinates in Angstrom with a 0.1 scale.
+# Cranberry stores OpenMM positions in nanometers, so the equivalent scale is 1.0.
+_BN_CROSS_PRODUCT_SCALE = 1.0
+...
+return cog + _cross(p2 - p1, p3 - p1) * _BN_CROSS_PRODUCT_SCALE</code></pre>
+  <pre><code># cranberry/cli/main.py
+def _cg(args):
+    output_path = args.output
+    result = coarse_grain_structure(args.pdb, output_path=output_path, ...)</code></pre>
+  <p>The library already owned the canonical default name. Passing <code>None</code> from the CLI keeps that single source of truth instead of rebuilding a shorter <code>_cg.pdb</code> name in the wrapper.</p>
+
+  <h2>Validation</h2>
+  <pre><code>conda run -n cranberry-dev python -m py_compile cranberry/cg.py cranberry/cli/main.py tests/test_cg.py tests/test_cli.py
+# passed
+
+conda run -n cranberry-dev python -m pytest -q tests/test_cg.py tests/test_cli.py::test_cli_cg_coarse_grains_real_1zih tests/test_cli.py::test_cli_cg_uses_cg_vs_conect_default_name
+....                                                                     [100%]
+4 passed in 0.34s</code></pre>
+
+  <h2>Risk</h2>
+  <p><span class="warn">Model-surface note:</span> this changes freshly generated BN coordinates from <code>cranberry cg</code> to match the packaged 1zih reference. Existing packaged fixtures are not rewritten in this patch.</p>
+</main>
+</body>
+</html>
