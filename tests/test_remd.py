@@ -262,12 +262,8 @@ def test_run_remd_mpi_restart_reopens_existing_storage(tmp_path):
 
 
 @pytest.mark.remd
-@pytest.mark.xfail(
-    reason='Fresh MPI REMD currently lets non-root ranks read reporter thermodynamic states after sampling.',
-    strict=True,
-)
 def test_run_remd_mpi_fresh_run_postprocess_is_rank_safe(tmp_path):
-    """Expose the fresh-run MPI post-processing bug without fixing it yet."""
+    """Verify fresh MPI REMD post-processing is rank-safe."""
 
     mpirun = _mpirun_or_skip()
     pdb = data_path('examples/2ntCG_cg_vs_conect.pdb')
@@ -314,12 +310,8 @@ def test_run_remd_mpi_fresh_run_postprocess_is_rank_safe(tmp_path):
 
 
 @pytest.mark.remd
-@pytest.mark.xfail(
-    reason='MPI remd-extract currently runs serial extraction and stdout on every rank instead of root only.',
-    strict=True,
-)
 def test_remd_extract_mpi_runs_only_on_root_rank(tmp_path):
-    """Expose MPI-duplicated DCD extraction without changing extraction behavior."""
+    """Verify MPI-launched DCD extraction runs only on the root rank."""
 
     mpirun = _mpirun_or_skip()
     pdb = data_path('examples/2ntCG_cg_vs_conect.pdb')

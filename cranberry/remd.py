@@ -197,69 +197,76 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
         actual_platform = _actual_sampler_platform(sampler, reference_state)
         _warn_platform_mismatch(config.platform, actual_platform)
         _warn_cuda_online_analysis(actual_platform, online_analysis_interval)
-        _write_args(
-            args_path,
-            _build_remd_args(
-                config=config,
-                model_name=get_model_spec(config.model).name,
-                output_netcdf_path=output_netcdf_path,
-                output_dcd_path=None,
-                output_dcd_manifest_path=None,
-                temperatures_kelvin=_expected_temperatures(ladder_spec),
-                n_iterations=n_iterations,
-                checkpoint_interval=checkpoint_interval,
-                online_analysis_interval=online_analysis_interval,
-                actual_platform=actual_platform,
-                openmmtools_version=getattr(openmmtools, '__version__', None),
-                pdb=pdb,
-                system=system,
-            ),
-        )
+        if _is_mpi_root(mpi_runtime):
+            _write_args(
+                args_path,
+                _build_remd_args(
+                    config=config,
+                    model_name=get_model_spec(config.model).name,
+                    output_netcdf_path=output_netcdf_path,
+                    output_dcd_path=None,
+                    output_dcd_manifest_path=None,
+                    temperatures_kelvin=_expected_temperatures(ladder_spec),
+                    n_iterations=n_iterations,
+                    checkpoint_interval=checkpoint_interval,
+                    online_analysis_interval=online_analysis_interval,
+                    actual_platform=actual_platform,
+                    openmmtools_version=getattr(openmmtools, '__version__', None),
+                    pdb=pdb,
+                    system=system,
+                ),
+            )
         sampler.minimize()
         sampler.run()
-        stored_temperatures = _read_temperatures_from_reporter(reporter)
+        stored_temperatures = _read_temperatures_from_reporter(reporter) if _is_mpi_root(mpi_runtime) else None
+        stored_temperatures = _mpi_bcast(mpiplus, stored_temperatures)
         _close_if_present(reporter)
     else:
-        reporter = multistate.MultiStateReporter(str(output_netcdf_path), open_mode='r', checkpoint_interval=checkpoint_interval)
-        try:
-            stored_temperatures = _read_temperatures_from_reporter(reporter)
-            expected_temperatures = _expected_temperatures(ladder_spec)
-            if stored_temperatures != expected_temperatures:
-                raise ValueError(
-                    'REMD restart ladder does not match the existing NetCDF storage: '
-                    f'expected {expected_temperatures}, found {stored_temperatures}'
-                )
-        finally:
-            _close_if_present(reporter)
+        if _is_mpi_root(mpi_runtime):
+            reporter = multistate.MultiStateReporter(str(output_netcdf_path), open_mode='r', checkpoint_interval=checkpoint_interval)
+            try:
+                stored_temperatures = _read_temperatures_from_reporter(reporter)
+                expected_temperatures = _expected_temperatures(ladder_spec)
+                if stored_temperatures != expected_temperatures:
+                    raise ValueError(
+                        'REMD restart ladder does not match the existing NetCDF storage: '
+                        f'expected {expected_temperatures}, found {stored_temperatures}'
+                    )
+            finally:
+                _close_if_present(reporter)
+        else:
+            stored_temperatures = None
+        stored_temperatures = _mpi_bcast(mpiplus, stored_temperatures)
         sampler = _sampler_from_storage(sampler_cls, output_netcdf_path, mpiplus, mpi_runtime)
         _apply_sampler_platform(sampler, openmmtools, config.platform)
         reference_state = states.ThermodynamicState(system, temperature=stored_temperatures[0] * unit.kelvin)
         actual_platform = _actual_sampler_platform(sampler, reference_state)
         _warn_platform_mismatch(config.platform, actual_platform)
         _warn_cuda_online_analysis(actual_platform, online_analysis_interval)
-        _write_args(
-            args_path,
-            _build_remd_args(
-                config=config,
-                model_name=get_model_spec(config.model).name,
-                output_netcdf_path=output_netcdf_path,
-                output_dcd_path=None,
-                output_dcd_manifest_path=None,
-                temperatures_kelvin=stored_temperatures,
-                n_iterations=n_iterations,
-                checkpoint_interval=checkpoint_interval,
-                online_analysis_interval=online_analysis_interval,
-                actual_platform=actual_platform,
-                openmmtools_version=getattr(openmmtools, '__version__', None),
-                pdb=pdb,
-                system=system,
-            ),
-        )
+        if _is_mpi_root(mpi_runtime):
+            _write_args(
+                args_path,
+                _build_remd_args(
+                    config=config,
+                    model_name=get_model_spec(config.model).name,
+                    output_netcdf_path=output_netcdf_path,
+                    output_dcd_path=None,
+                    output_dcd_manifest_path=None,
+                    temperatures_kelvin=stored_temperatures,
+                    n_iterations=n_iterations,
+                    checkpoint_interval=checkpoint_interval,
+                    online_analysis_interval=online_analysis_interval,
+                    actual_platform=actual_platform,
+                    openmmtools_version=getattr(openmmtools, '__version__', None),
+                    pdb=pdb,
+                    system=system,
+                ),
+            )
         sampler.extend(n_iterations)
 
     output_dcd_path = None
     output_dcd_manifest_path = None
-    if config.write_dcd:
+    if config.write_dcd and _is_mpi_root(mpi_runtime):
         output_dcd_path = translate_netcdf_to_dcd(
             output_netcdf_path,
             pdb_path=config.pdb_path,
@@ -270,7 +277,7 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
         if config.dcd_mode == 'temperature':
             output_dcd_manifest_path = output_dir / 'output_temperature_labels.txt'
 
-    if output_dcd_path is not None or output_dcd_manifest_path is not None:
+    if (output_dcd_path is not None or output_dcd_manifest_path is not None) and _is_mpi_root(mpi_runtime):
         _write_args(
             args_path,
             _build_remd_args(
@@ -317,13 +324,17 @@ def translate_netcdf_to_dcd(
     output_dir: str | Path | None = None,
     output_mode: str = 'replica',
     overwrite: bool = False,
-) -> Path | tuple[Path, ...]:
+) -> Path | tuple[Path, ...] | None:
     """Translate a REMD NetCDF trajectory to DCD files."""
 
     netcdf_path = Path(netcdf_path)
     pdb_path = Path(pdb_path)
     output_dir = Path(output_dir) if output_dir is not None else netcdf_path.parent
     output_dir.mkdir(parents=True, exist_ok=True)
+    mpiplus = _load_mpiplus()
+    mpi_runtime = _detect_mpi_runtime(mpiplus)
+    if not _is_mpi_root(mpi_runtime):
+        return None
 
     _, _, _, multistate = _load_openmmtools()
     reporter = multistate.MultiStateReporter(str(netcdf_path), open_mode='r', checkpoint_interval=1)
@@ -430,6 +441,25 @@ def _detect_mpi_runtime(mpiplus) -> _MpiRuntime:
     rank = rank_getter() if callable(rank_getter) else getattr(comm, 'rank', 0)
     size = size_getter() if callable(size_getter) else getattr(comm, 'size', 1)
     return _MpiRuntime(enabled=int(size) > 1, rank=int(rank), size=int(size))
+
+
+def _is_mpi_root(mpi_runtime: _MpiRuntime) -> bool:
+    return not mpi_runtime.enabled or mpi_runtime.rank == 0
+
+
+def _mpi_bcast(mpiplus, value, root: int = 0):
+    if mpiplus is None:
+        return value
+    try:
+        comm = mpiplus.get_mpicomm()
+    except Exception:
+        return value
+    if comm is None:
+        return value
+    bcast = getattr(comm, 'bcast', None)
+    if callable(bcast):
+        return bcast(value, root=root)
+    return value
 
 
 def _sampler_from_storage(sampler_cls, storage_path: Path, mpiplus, mpi_runtime: _MpiRuntime):

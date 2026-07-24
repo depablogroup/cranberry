@@ -22,7 +22,7 @@ from ..forcefield import (
 from ..md import run_md
 from ..cg import coarse_grain_structure
 from ..prepare import prepare_structure
-from ..remd import RemdRunConfig, TemperatureLadderSpec, _add_dcd_mode_options, build_remd_parser, run_remd, translate_netcdf_to_dcd
+from ..remd import RemdRunConfig, TemperatureLadderSpec, _add_dcd_mode_options, _detect_mpi_runtime, _is_mpi_root, _load_mpiplus, build_remd_parser, run_remd, translate_netcdf_to_dcd
 from ..validation import validate_canonical_pdb
 
 _NOOP_PREPARE_NOTE = (
@@ -231,6 +231,8 @@ def _remd(args: argparse.Namespace) -> int:
             box_padding_nanometer=args.box_padding,
         )
     )
+    if not _is_mpi_root(_detect_mpi_runtime(_load_mpiplus())):
+        return 0
     print(
         "settings: "
         f"model={args.model}, "
@@ -263,6 +265,8 @@ def _remd_extract(args: argparse.Namespace) -> int:
         output_mode=args.dcd_mode,
         overwrite=args.overwrite,
     )
+    if output is None:
+        return 0
     print(f"output: {output}")
     return 0
 
