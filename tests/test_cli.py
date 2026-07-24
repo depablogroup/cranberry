@@ -1,4 +1,5 @@
 import json
+from shutil import copyfile
 import pytest
 from cranberry.cli.main import main
 from cranberry.data import data_path
@@ -245,3 +246,17 @@ def test_cli_cg_coarse_grains_real_1zih(tmp_path, capsys):
     assert "coarse-grained residues: 12" in captured.out
     assert "virtual-site atoms: 24" in captured.out
     assert output.exists()
+
+
+def test_cli_cg_uses_cg_vs_conect_default_name(tmp_path, capsys):
+    source = data_path("examples/aa/1zih/1zih.pdb")
+    input_path = tmp_path / "1zih.pdb"
+    copyfile(source, input_path)
+
+    assert main(["cg", str(input_path)]) == 0
+    captured = capsys.readouterr()
+
+    output = tmp_path / "1zih_cg_vs_conect.pdb"
+    assert f"output: {output}" in captured.out
+    assert output.exists()
+    assert not (tmp_path / "1zih_cg.pdb").exists()

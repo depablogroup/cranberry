@@ -160,7 +160,7 @@ def _prepare(args: argparse.Namespace) -> int:
 
 
 def _cg(args: argparse.Namespace) -> int:
-    output_path = args.output or args.pdb.with_name(f"{args.pdb.stem}_{args.workflow}.pdb")
+    output_path = args.output
     result = coarse_grain_structure(
         args.pdb,
         output_path=output_path,
