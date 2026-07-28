@@ -7,7 +7,7 @@ REMD defaults to no-overwrite behavior, matching OpenMMTools. Use `--overwrite` 
 A tiny CPU run can be started with total MD integration steps plus the number of MD steps between exchange attempts:
 
 ```bash
-cranberry remd cranberry/data/examples/2ntCG_cg_vs_conect.pdb   --steps 1000   --swap-steps 100   --n-record 10   --temperature-ladder 298 318   --output-dir remd-out
+cranberry remd cranberry/data/examples/2ntCG_cg_vs_conect.pdb   --steps 50000   --swap-steps 5000   --n-record 10   --temperature-ladder 298 318   --output-dir remd-out
 ```
 
 `--steps` is the total MD integration step count. Cranberry derives the OpenMMTools iteration count as `max(1, steps // swap_steps)`. `--n-record` controls the NetCDF checkpoint density by deriving a checkpoint interval in REMD iterations. `--n-analysis 0` disables OpenMMTools online analysis; values greater than zero derive an online-analysis interval.

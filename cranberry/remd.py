@@ -13,7 +13,7 @@ import openmm as mm
 from openmm import app, unit
 
 from cranberry.forcefield import CranberryForceField, get_model_spec, prepare_periodic_positions, validate_periodic_box_cutoffs
-from cranberry.md import _present_force_group_names, _sha256, _write_args
+from cranberry.md import _present_force_group_names, _sha256, _write_args, calculate_langevin_friction
 from cranberry.validation import validate_canonical_pdb
 
 try:
@@ -24,9 +24,10 @@ except PackageNotFoundError:  # pragma: no cover - editable source tree before i
 DEFAULT_REMD_T_MIN_K = 298.0
 DEFAULT_REMD_T_MAX_K = 600.0
 DEFAULT_REMD_N_REPLICAS = 8
-DEFAULT_REMD_SWAP_STEPS = 100
+DEFAULT_REMD_SWAP_STEPS = 5000
 DEFAULT_REMD_N_RECORD = 1000
 DEFAULT_REMD_N_ANALYSIS = 0
+DEFAULT_REMD_MCMC_MOVE = 'LangevinDynamicsMove'
 
 
 @dataclass(frozen=True)
@@ -173,7 +174,20 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
     openmmtools, mcmc, states, multistate = _load_openmmtools()
     mpiplus = _load_mpiplus()
     mpi_runtime = _detect_mpi_runtime(mpiplus)
-    move = mcmc.GHMCMove(timestep=config.timestep_femtosecond * unit.femtosecond, n_steps=config.swap_steps)
+    move_temperatures = _expected_temperatures(ladder_spec)
+    collision_rates = tuple(
+        calculate_langevin_friction(pdb.topology, system, temperature * unit.kelvin)
+        for temperature in move_temperatures
+    )
+    move = [
+        mcmc.LangevinDynamicsMove(
+            timestep=config.timestep_femtosecond * unit.femtosecond,
+            collision_rate=collision_rate,
+            n_steps=config.swap_steps,
+            reassign_velocities=True,
+        )
+        for collision_rate in collision_rates
+    ]
     sampler_cls = multistate.ParallelTemperingSampler
     actual_platform = None
 
@@ -211,6 +225,8 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
                     checkpoint_interval=checkpoint_interval,
                     online_analysis_interval=online_analysis_interval,
                     actual_platform=actual_platform,
+                    mcmc_move=DEFAULT_REMD_MCMC_MOVE,
+                    collision_rates=collision_rates,
                     openmmtools_version=getattr(openmmtools, '__version__', None),
                     pdb=pdb,
                     system=system,
@@ -257,6 +273,8 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
                     checkpoint_interval=checkpoint_interval,
                     online_analysis_interval=online_analysis_interval,
                     actual_platform=actual_platform,
+                    mcmc_move=DEFAULT_REMD_MCMC_MOVE,
+                    collision_rates=collision_rates,
                     openmmtools_version=getattr(openmmtools, '__version__', None),
                     pdb=pdb,
                     system=system,
@@ -291,6 +309,8 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
                 checkpoint_interval=checkpoint_interval,
                 online_analysis_interval=online_analysis_interval,
                 actual_platform=actual_platform,
+                mcmc_move=DEFAULT_REMD_MCMC_MOVE,
+                collision_rates=collision_rates,
                 openmmtools_version=getattr(openmmtools, '__version__', None),
                 pdb=pdb,
                 system=system,
@@ -567,6 +587,8 @@ def _build_remd_args(
     online_analysis_interval: int | None,
     actual_platform: str | None,
     openmmtools_version: str | None,
+    mcmc_move: str,
+    collision_rates: tuple[unit.Quantity, ...],
     pdb: app.PDBFile,
     system: mm.System,
 ) -> dict[str, object]:
@@ -598,6 +620,10 @@ def _build_remd_args(
         'requested_n_replicas': int(ladder_spec.n_replicas),
         'salt_millimolar': float(config.salt_concentration_millimolar),
         'timestep_femtosecond': float(config.timestep_femtosecond),
+        'langevin_collision_rate_per_ps': [
+            float(collision_rate.value_in_unit(unit.picosecond**-1))
+            for collision_rate in collision_rates
+        ],
         'platform': config.platform,
         'actual_platform': actual_platform,
         'restart_from': str(config.restart_from) if config.restart_from is not None else None,
@@ -618,7 +644,7 @@ def _build_remd_args(
         'periodic_box_vectors_present': bool(config.periodic and box_vectors is not None),
         'force_groups': _present_force_group_names(system),
         'sampler': 'ParallelTemperingSampler',
-        'mcmc_move': 'GHMCMove',
+        'mcmc_move': mcmc_move,
         'cranberry_version': __version__,
         'openmm_version': getattr(mm, '__version__', None),
         'openmmtools_version': openmmtools_version,

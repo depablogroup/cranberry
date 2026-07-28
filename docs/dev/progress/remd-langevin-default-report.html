@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>REMD Langevin Default Report</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 980px; margin: 2rem auto; line-height: 1.45; }
+    code, pre { background: #f5f5f5; }
+    pre { padding: 1rem; overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 0.4rem 0.55rem; text-align: left; }
+    th { background: #f7f7f7; }
+    .ok { color: #176d2f; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>REMD Langevin Default Report</h1>
+  <p>This change updates Cranberry REMD defaults after local MPI+MPS profiling showed that the previous GHMC move and short exchange interval made OpenMMTools propagation substantially slower than direct MPS MD for the bundled <code>ggcGCAAgcc</code> benchmark.</p>
+
+  <h2>Behavior Change</h2>
+  <ul>
+    <li>Default REMD move changed from <code>GHMCMove</code> to normal OpenMMTools <code>LangevinDynamicsMove</code>.</li>
+    <li>Default REMD exchange interval changed from <code>swap_steps=100</code> to <code>swap_steps=5000</code>.</li>
+    <li>Each thermodynamic temperature receives its own Langevin move with Cranberry's length-dependent friction calculated at that temperature.</li>
+    <li>REMD Langevin moves use <code>reassign_velocities=True</code>, matching the OpenMMTools alanine REMD benchmark style and keeping velocities thermalized to the current temperature after exchanges.</li>
+    <li>The experimental positions-only move tested during profiling is not used.</li>
+  </ul>
+
+  <h2>Key Code Path</h2>
+  <pre><code>move_temperatures = _expected_temperatures(ladder_spec)
+collision_rates = tuple(
+    calculate_langevin_friction(pdb.topology, system, temperature * unit.kelvin)
+    for temperature in move_temperatures
+)
+move = [
+    mcmc.LangevinDynamicsMove(
+        timestep=config.timestep_femtosecond * unit.femtosecond,
+        collision_rate=collision_rate,
+        n_steps=config.swap_steps,
+        reassign_velocities=True,
+    )
+    for collision_rate in collision_rates
+]</code></pre>
+  <p>The provenance writer records <code>mcmc_move</code> and the per-temperature <code>langevin_collision_rate_per_ps</code> list in <code>args.json</code>.</p>
+
+  <h2>Benchmark Rationale</h2>
+  <table>
+    <thead><tr><th>Case</th><th>Aggregate ns/day</th><th>Per replica ns/day</th><th>Relative to direct 8x MPS MD</th></tr></thead>
+    <tbody>
+      <tr><td>direct OpenMM 8x MPS MD, no reporter</td><td>4451</td><td>556</td><td>100%</td></tr>
+      <tr><td>old CLI REMD benchmark, GHMC, swap 100</td><td>1481</td><td>185</td><td>33%</td></tr>
+      <tr><td>OpenMMTools no-exchange, GHMC, 5000</td><td>2084</td><td>260</td><td>47%</td></tr>
+      <tr><td>OpenMMTools no-exchange, Langevin, 5000</td><td>3111</td><td>389</td><td>70%</td></tr>
+      <tr><td>OpenMMTools REMD, Langevin, 5000</td><td>2987</td><td>373</td><td>67%</td></tr>
+    </tbody>
+  </table>
+  <p>The remaining overhead was dominated by OpenMMTools propagation, not exchange/reporting: in the Langevin REMD 5000-step profile, propagation accounted for about 98% of timed iteration cost.</p>
+
+  <h2>Validation</h2>
+  <ul>
+    <li class="ok"><code>conda run -n cranberry-dev python -m pytest -q tests/test_remd.py::test_run_remd_and_translate_real_openmmtools</code>: passed</li>
+    <li class="ok"><code>conda run -n cranberry-dev python -m pytest -q tests/test_remd.py</code>: 12 passed, 1 warning in 111.23 s</li>
+    <li class="ok"><code>conda run -n cranberry-dev python -m pytest -q tests/test_cli.py::test_cli_remd_smoke_with_default_output_dir</code>: 1 passed, 1 warning in 17.80 s</li>
+  </ul>
+
+  <h2>Risk</h2>
+  <p>This changes the default sampler from a Metropolized GHMC move to a standard Langevin dynamics move. Langevin is the same integrator family used by Cranberry MD and is a normal OpenMMTools REMD choice, but it does not provide GHMC's Metropolis correction for finite-timestep integration error. Users can still tune <code>--swap-steps</code>; an explicit move-selection API is deferred until there is a concrete need.</p>
+</body>
+</html>

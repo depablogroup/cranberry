@@ -78,6 +78,9 @@ def test_run_remd_and_translate_real_openmmtools(tmp_path):
     assert args['actual_platform'] == 'CPU'
     assert args['periodic'] is False
     assert args['periodic_box_vectors_present'] is False
+    assert args['mcmc_move'] == 'LangevinDynamicsMove'
+    assert len(args['langevin_collision_rate_per_ps']) == 2
+    assert all(rate > 0 for rate in args['langevin_collision_rate_per_ps'])
 
     output_dcds = translate_netcdf_to_dcd(
         result.output_netcdf_path,
