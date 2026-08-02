@@ -46,7 +46,7 @@ Advanced extras such as JAX, training, and PySAGES/enhanced sampling move after 
 
 ### Phase 7: Hardening
 
-In parallel with the later phases. Finish developer-facing force-field construction notes, benchmark scaffolding, release discipline, and any documentation needed for a public v1.
+In parallel with the later phases. Finish developer-facing force-field construction notes, benchmark scaffolding, release discipline, posthoc trajectory analysis for detailed potential energies, possible posthoc geometric base-pairing/base-stacking analysis (including both aggregating over geometries/stacking types and also nucleotide-nucleotide all pairs), and any documentation needed for a public v1.
 
 Benchmark hardening should include a published MD benchmark tab, one committed baseline snapshot from the local RTX 2060/CUDA workstation, and a path to compare later CPU, GPU, and MPS runs across clusters. The first plot should be speed versus system size for the bundled canonical systems; later snapshots can add REMD throughput and additional machine series.
 
