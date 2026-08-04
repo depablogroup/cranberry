@@ -175,6 +175,21 @@ cranberry md cranberry/data/examples/2ntCG_cg_vs_conect.pdb \
   --platform CPU
 ```
 
+On Slurm GPU nodes, pack several independent MD runs into one GPU allocation with CUDA MPS:
+
+```bash
+scripts/hpc/submit_md_mps_pack_example_slurm.sh \
+  --pdb system_a_cg_vs_conect.pdb \
+  --pdb system_b_cg_vs_conect.pdb \
+  --steps 100000 \
+  --platform CUDA \
+  --output-root runs/md-pack \
+  --account my_account \
+  --partition gpu
+```
+
+See `docs/tutorials/packed-md-hpc.md` for the full prepare-and-submit workflow.
+
 ## Python API
 
 The API follows OpenMM conventions and accepts OpenMM unit quantities where appropriate.
@@ -244,6 +259,7 @@ Start here:
 Tutorials:
 
 - [Energy decomposition](https://github.com/yihengwuKP/cranberry/blob/main/docs/tutorials/energy-decomposition.md)
+- [Prepare and run packed MD on HPC](https://github.com/yihengwuKP/cranberry/blob/main/docs/tutorials/packed-md-hpc.md)
 - [Prepare and run MD](https://github.com/yihengwuKP/cranberry/blob/main/docs/tutorials/prepare-and-run-md.md)
 - [REMD](https://github.com/yihengwuKP/cranberry/blob/main/docs/tutorials/remd.md)
 
