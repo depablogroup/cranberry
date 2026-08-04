@@ -1,7 +1,7 @@
 schema_version: 1
 generated_at: '2026-07-17T21:16:25.676046+00:00'
-host: 'yihengwu-Precision-3630-Tower'
-pdb: '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+host: <host>
+pdb: 'cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
 gpu:
   name: NVIDIA GeForce RTX 2060
   driver_version: 595.71.05
@@ -14,15 +14,15 @@ runs:
     kind: 'remd-cuda-8temps-mpi-8-analysis-0'
     returncode: 1
     command:
-      - '/home/yihengwu/miniforge3/envs/cranberry-dev/bin/mpirun'
+      - '<environment>/bin/mpirun'
       - '--oversubscribe'
       - '-n'
       - 8
-      - '/home/yihengwu/miniforge3/envs/cranberry-dev/bin/python'
+      - '<environment>/bin/python'
       - '-m'
       - 'cranberry.cli.main'
       - remd
-      - '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+      - 'cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
       - '--steps'
       - 20000
       - '--swap-steps'
@@ -86,7 +86,7 @@ runs:
       output_dcd_path: null
       output_netcdf_path: 'benchmarks/results/local_cuda_remd_mpi_mps_analysis_compare_ggcGCAAgcc_runs/remd_cuda_8temps_mpi_8_analysis_0/output.nc'
       overwrite: true
-      pdb_path: '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+      pdb_path: 'cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
       pdb_sha256: 341f701020c33e4044cd998782b5c127f82da044dbafa424fc7ade5913de420a
       periodic: false
       periodic_box_vectors_present: false
@@ -123,15 +123,15 @@ runs:
     kind: 'remd-cuda-8temps-mpi-8-analysis-10'
     returncode: 1
     command:
-      - '/home/yihengwu/miniforge3/envs/cranberry-dev/bin/mpirun'
+      - '<environment>/bin/mpirun'
       - '--oversubscribe'
       - '-n'
       - 8
-      - '/home/yihengwu/miniforge3/envs/cranberry-dev/bin/python'
+      - '<environment>/bin/python'
       - '-m'
       - 'cranberry.cli.main'
       - remd
-      - '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+      - 'cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
       - '--steps'
       - 20000
       - '--swap-steps'
@@ -195,7 +195,7 @@ runs:
       output_dcd_path: null
       output_netcdf_path: 'benchmarks/results/local_cuda_remd_mpi_mps_analysis_compare_ggcGCAAgcc_runs/remd_cuda_8temps_mpi_8_analysis_10/output.nc'
       overwrite: true
-      pdb_path: '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+      pdb_path: 'cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
       pdb_sha256: 341f701020c33e4044cd998782b5c127f82da044dbafa424fc7ade5913de420a
       periodic: false
       periodic_box_vectors_present: false

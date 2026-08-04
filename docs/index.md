@@ -6,6 +6,7 @@
 :maxdepth: 2
 
 installation
+citation
 quickstart
 faq
 tutorials/prepare-and-run-md

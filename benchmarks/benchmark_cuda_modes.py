@@ -109,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 )
 
-    args.output.write_text(to_yaml(benchmark))
+    args.output.write_text(to_yaml(portable_snapshot(benchmark)))
     print(f"wrote {args.output}")
     return 0
 
@@ -481,6 +481,37 @@ def parse_float(value: str) -> float | None:
         return float(str(value).strip())
     except ValueError:
         return None
+
+
+def portable_snapshot(value: Any) -> Any:
+    """Remove machine-specific absolute paths from persisted benchmark data."""
+
+    if isinstance(value, dict):
+        return {
+            key: "<host>" if key in {"host", "hostname"} and item else portable_snapshot(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [portable_snapshot(item) for item in value]
+    if isinstance(value, tuple):
+        return [portable_snapshot(item) for item in value]
+    if isinstance(value, str):
+        return _portable_string(value)
+    return value
+
+
+def _portable_string(value: str) -> str:
+    if not value.startswith("/"):
+        return value
+    path = Path(value)
+    roots = ((Path.cwd().resolve(), None), (Path(sys.prefix).resolve(), "<environment>"))
+    for root, label in roots:
+        try:
+            relative = path.resolve().relative_to(root)
+        except ValueError:
+            continue
+        return relative.as_posix() if label is None else (Path(label) / relative).as_posix()
+    return (Path("<external>") / path.name).as_posix()
 
 
 def to_yaml(value: Any, indent: int = 0) -> str:

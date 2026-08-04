@@ -272,23 +272,34 @@ def _remd_extract(args: argparse.Namespace) -> int:
 
 
 def _runtime_settings_line(
-args: argparse.Namespace, *, platform: str | None, report_interval: int | None = None, checkpoint_interval: int | None = None, actual_platform: str | None = None) -> str:
+    args: argparse.Namespace,
+    *,
+    platform: str | None,
+    report_interval: int | None = None,
+    checkpoint_interval: int | None = None,
+    actual_platform: str | None = None,
+) -> str:
     model_spec = get_model_spec(args.model)
     effective_platform = platform if platform is not None else "default"
-    return (
-        "settings: "
-        f"model={model_spec.name}, "
-        f"temperature={args.temperature:.1f} K, "
-        f"salt={args.salt:.1f} mM, "
-        f"timestep={args.timestep:.1f} fs, "
-        f"report_interval={report_interval if report_interval is not None else 'auto'}, "
-        f"checkpoint_interval={checkpoint_interval if checkpoint_interval is not None else 'auto'}, "
-        f"n_record={getattr(args, 'n_record', 'auto')}, "
-        f"periodic={getattr(args, 'periodic', False)}, "
-        f"enforce_periodic_output={getattr(args, 'enforce_periodic_output', False)}, "
-        f"platform={effective_platform}, "
-        f"actual_platform={actual_platform if actual_platform is not None else 'unknown'}"
+    settings = [
+        f"model={model_spec.name}",
+        f"temperature={args.temperature:.1f} K",
+        f"salt={args.salt:.1f} mM",
+    ]
+    if hasattr(args, "timestep"):
+        settings.append(f"timestep={args.timestep:.1f} fs")
+    settings.extend(
+        [
+            f"report_interval={report_interval if report_interval is not None else 'auto'}",
+            f"checkpoint_interval={checkpoint_interval if checkpoint_interval is not None else 'auto'}",
+            f"n_record={getattr(args, 'n_record', 'auto')}",
+            f"periodic={getattr(args, 'periodic', False)}",
+            f"enforce_periodic_output={getattr(args, 'enforce_periodic_output', False)}",
+            f"platform={effective_platform}",
+            f"actual_platform={actual_platform if actual_platform is not None else 'unknown'}",
+        ]
     )
+    return "settings: " + ", ".join(settings)
 
 
 def _md(args: argparse.Namespace) -> int:

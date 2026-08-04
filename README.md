@@ -1,183 +1,106 @@
 # cranberry-rna
 
-`cranberry-rna` is the installable Python package for CRANBERRY coarse-grained RNA simulations with OpenMM. The distribution name is `cranberry-rna`; the Python import package is `cranberry`.
+`cranberry-rna` provides the CRANBERRY coarse-grained RNA model and OpenMM-based workflows for structure preparation, energy evaluation, molecular dynamics (MD), and replica-exchange molecular dynamics (REMD).
 
-CRANBERRY is currently in alpha development while the stable v1 workflow is migrated from the legacy `OpenMM-CGRNA` project. The current package already ships the canonical CRANBERRY v1 alpha force-field assets, an OpenMM-native force-field API, CPU energy decomposition, a basic MD runner with restart support, and the first Phase 4 preparation workflow slice.
+The package is currently an alpha release tied to the published CRANBERRY model assets. Python 3.11 is supported.
 
-This repository is intended to be usable by active developers from a fresh clone, including developers who want to run on GPU hardware. The package itself is intentionally small: it does not manage GPU drivers, CUDA toolkits, or OpenMM platform installation. Those come from your local Python environment and system setup.
+## Capabilities
 
-## Current Scope
+- Coarse-grain atomistic RNA PDB structures into the canonical CRANBERRY representation.
+- Validate and canonicalize prepared coarse-grained structures.
+- Build OpenMM `System` objects with `CranberryForceField`.
+- Compute total and force-group-resolved energies.
+- Run CPU or GPU MD with checkpoints, restart, detailed logs, and DCD output.
+- Run OpenMMTools parallel tempering with optional MPI, periodic boundaries, restart, and replica- or temperature-indexed DCD extraction.
+- Use packaged force-field assets and reference structures without a legacy source checkout.
 
-Implemented:
+## Installation
 
-- package import as `cranberry`
-- packaged model assets: XML plus `cranberry-v1-alpha.1.h5`
-- canonical input validation
-- `cranberry cg` coarse-graining workflow for atomistic RNA inputs, and `cranberry prepare` canonicalization workflow for already coarse-grained CRANBERRY PDBs
-- `CranberryForceField.createSystem()`
-- `cranberry energy` and `cranberry.energy.compute_energy()`
-- `cranberry md` and `cranberry.md.run_md()`
-- default MD outputs: `output.dcd`, `log`, `detailed.log`, `args.json`, `checkpoint.chk`, `final.pdb`
-- restart from OpenMM checkpoints
-
-Planned:
-
-- coarse-graining workflow from atomistic RNA inputs
-- preparation/canonicalization workflow for already coarse-grained inputs
-- optional 5'-phosphate insertion during preparation
-- REMD through optional `openmmtools` support, with NetCDF restart and OpenMM-native DCD translation; no MDAnalysis dependency in the public release
-- optional JAX/training/PySAGES workflows
-
-## Fresh Setup
-
-The recommended development flow is:
-
-1. Create a dedicated conda environment.
-2. Install the package in editable mode with dev extras.
-3. Verify the import, CLI, and tests.
-
-For a new environment, clone the repository first, then install from inside that cloned folder:
+The recommended installation is a GPU-capable conda environment. OpenMM's conda-forge package selects a CUDA build compatible with the available NVIDIA driver; you do not need to install a separate system CUDA toolkit. An up-to-date vendor driver is still required. See the [OpenMM installation guide](https://docs.openmm.org/latest/userguide/application/01_getting_started.html) for CUDA-version-specific options.
 
 ```bash
-conda create -n cranberry-dev python=3.11
-conda activate cranberry-dev
+conda create -n cranberry -c conda-forge python=3.11 openmm
+conda activate cranberry
 git clone https://github.com/yihengwuKP/cranberry.git
 cd cranberry
-python -m pip install -e ".[dev]"
+python -m pip install --no-deps -e .
+python -m openmm.testInstallation
 ```
 
-For GPU development, prefer installing OpenMM with conda before the editable Cranberry install so that OpenMM's CUDA platform plugin is resolved by conda:
-
-```bash
-conda create -n cranberry-dev -c conda-forge python=3.11 openmm
-conda activate cranberry-dev
-git clone https://github.com/yihengwuKP/cranberry.git
-cd cranberry
-python -m pip install -e ".[dev]"
-```
-
-If you already cloned the repository, skip `git clone` and replace `cd cranberry` with `cd /absolute/path/to/your/cranberry`. The `cd` step must put your shell in the repository checkout before running `python -m pip install -e ".[dev]"`.
-
-Verify the editable install:
-
-```bash
-python -c 'import cranberry; print(cranberry.__file__)'
-cranberry --help
-python -m pytest -q
-sphinx-build -b html docs docs/_build/html
-```
-
-The import check should print a path ending in `cranberry/__init__.py` inside your checkout. If it prints `None`, return to the cloned repository folder and rerun `python -m pip install -e ".[dev]"` in the activated environment.
-
-For install troubleshooting, see the [FAQ](https://github.com/yihengwuKP/cranberry/blob/main/docs/faq.md).
-
-If you prefer a CPU-only workflow, this is enough. If you want GPU execution, keep reading.
-
-## GPU Development
-
-The current workflow is sufficient for GPU-enabled development if your environment already exposes a GPU-capable OpenMM build. In practice, that means:
-
-- your driver/runtime stack is installed on the machine
-- OpenMM can see the accelerator platform you want to use
-- you select that platform explicitly or allow OpenMM to choose it
-
-CRANBERRY does not add an extra GPU-specific install layer. Once OpenMM is installed correctly, the same editable install works for CPU and GPU runs. If `python -m pip install -e ".[dev]"` installs OpenMM for you, that may be sufficient for CPU use, but GPU users should prefer preinstalling OpenMM from conda-forge:
-
-```bash
-conda create -n cranberry-dev -c conda-forge python=3.11 openmm
-conda activate cranberry-dev
-python -m pip install -e ".[dev]"
-```
-
-Before running Cranberry on CUDA, confirm that OpenMM registered the CUDA platform in this environment:
-
-```bash
-python - <<'PY'
-from openmm import Platform
-print([Platform.getPlatform(i).getName() for i in range(Platform.getNumPlatforms())])
-PY
-```
-
-If that list does not include `CUDA`, debug the OpenMM installation before debugging Cranberry.
-
-To run on GPU hardware, pass the OpenMM platform you want:
+Use `--platform CUDA` for GPU runs after the self-test reports a CUDA platform:
 
 ```bash
 cranberry energy cranberry/data/examples/2ntCG_cg_vs_conect.pdb --platform CUDA
-cranberry md cranberry/data/examples/2ntCG_cg_vs_conect.pdb \
-  --steps 1000 \
-  --output-dir md-out \
-  --platform CUDA
+cranberry md cranberry/data/examples/2ntCG_cg_vs_conect.pdb --steps 1000 --platform CUDA --output-dir md-out
 ```
 
-If you want OpenMM to pick the available platform itself, use:
+For a CPU-only installation, use pip's OpenMM package and select `--platform CPU`:
 
 ```bash
-cranberry md cranberry/data/examples/2ntCG_cg_vs_conect.pdb \
-  --steps 1000 \
-  --output-dir md-out \
-  --platform default
-```
-
-Important current limitations:
-
-- CI is CPU-only, so GPU behavior is not validated in GitHub Actions.
-- The package defaults to CPU for predictable local and CI behavior, and the MD default timestep is 5 fs.
-- GPU restart behavior still uses the same OpenMM checkpoint contract, so the restart checkpoint must be compatible with the selected platform and model.
-
-## Quickstart
-
-Inspect the package and default model:
-
-```bash
-cranberry inspect
-cranberry inspect forcefield
-cranberry inspect data
-```
-
-Prepare a canonical coarse-grained input. `cranberry cg` coarse-grains an atomistic RNA PDB into canonical CRANBERRY CG form, while `cranberry prepare` canonicalizes an already coarse-grained input. The default `prepare` path is a validation-only check: if no terminal-phosphate insertion is requested, Cranberry reports that nothing needs to be changed and does not write a new file. Use `--add-terminal-phosphate` only when you want Cranberry to add missing 5'-terminal phosphate context near a chain end for sugar-puckering analysis in the coarse-grained model:
-
-```bash
-cranberry prepare cranberry/data/examples/2ntCG_cg_vs_conect.pdb --add-terminal-phosphate
-```
-
-Validate a canonical coarse-grained input PDB:
-
-The example filenames follow the pattern `*_cg_vs_conect.pdb`: `cg` means coarse-grained, `vs` means virtual sites, and `conect` means the PDB includes `CONECT` bond records.
-
-```bash
-cranberry inspect input cranberry/data/examples/2ntCG_cg_vs_conect.pdb
-```
-
-Compute total and decomposed energies on CPU:
-
-```bash
+conda create -n cranberry-cpu python=3.11 pip
+conda activate cranberry-cpu
+python -m pip install openmm
+git clone https://github.com/yihengwuKP/cranberry.git
+cd cranberry
+python -m pip install -e .
+python -m openmm.testInstallation
 cranberry energy cranberry/data/examples/2ntCG_cg_vs_conect.pdb --platform CPU
 ```
 
-Run a short CPU MD simulation:
+For REMD, install OpenMMTools and MPI in the active environment, then install Cranberry's optional dependency boundary:
 
 ```bash
-cranberry md cranberry/data/examples/2ntCG_cg_vs_conect.pdb \
-  --steps 1000 \
-  --n-record 10 \
-  --output-dir md-out \
-  --platform CPU
+conda install -c conda-forge openmmtools openmpi mpi4py h5py
+python -m pip install --no-deps -e ".[remd]"
 ```
 
-Restart from the generated checkpoint. Restart appends to `output.dcd`, `log`, and `detailed.log` when they exist; if any are missing, Cranberry warns and creates them starting from the checkpoint step. `args.json` records latest run metadata, and distinct previous metadata is archived under `args_history/`.
+REMD can run on CPU or GPU. Use `--platform CPU` for a CPU-only run, `--platform CUDA` for CUDA, and read the [REMD tutorial](docs/tutorials/remd.md) before using periodic or melting-style workflows. The [MD tutorial](docs/tutorials/prepare-and-run-md.md) covers CPU/GPU MD, checkpoints, restarts, and output files. See [installation](docs/installation.md) and the [FAQ](docs/faq.md) for platform troubleshooting.
+
+## Quick Start
+
+Inspect the installed model and a prepared structure:
 
 ```bash
-cranberry md cranberry/data/examples/2ntCG_cg_vs_conect.pdb \
-  --steps 1000 \
-  --restart-from md-out/checkpoint.chk \
-  --output-dir md-out \
-  --platform CPU
+cranberry inspect forcefield
+cranberry inspect input cranberry/data/examples/157d_cg_vs_conect.pdb
+```
+
+Coarse-grain an atomistic RNA structure and evaluate its energy:
+
+```bash
+cranberry cg atomistic-rna.pdb
+cranberry energy atomistic-rna_cg_vs_conect.pdb --platform CPU
+```
+
+Run MD:
+
+```bash
+cranberry md atomistic-rna_cg_vs_conect.pdb \
+  --steps 100000 \
+  --platform CPU \
+  --output-dir md-run
+```
+
+Run periodic REMD with folded and extended starting conformations:
+
+```bash
+cranberry remd cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb \
+  --extra-start-pdb cranberry/data/examples/ggcGCAAgcc_extended_cg_vs_conect.pdb \
+  --periodic \
+  --steps 100000 \
+  --output-dir remd-run
+```
+
+Extract trajectories by thermodynamic temperature:
+
+```bash
+cranberry remd-extract remd-run/output.nc \
+  cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb \
+  --output-dir remd-run \
+  --by-temperature
 ```
 
 ## Python API
-
-The API follows OpenMM conventions and accepts OpenMM unit quantities where appropriate.
 
 ```python
 from openmm import app, unit
@@ -193,71 +116,40 @@ system = forcefield.createSystem(
 )
 ```
 
-For the high-level MD runner:
+## Input Model
 
-```python
-from cranberry.md import run_md
+Simulation commands require canonical CRANBERRY coarse-grained PDB files containing supported RNA residues, the expected beads and virtual sites, and `CONECT` records. Use `cranberry cg` for atomistic input and `cranberry inspect input` before simulation.
 
-result = run_md(
-    "input_cg_vs_conect.pdb",
-    steps=1000,
-    output_dir="md-out",
-    platform="CPU",
-)
-print(result.checkpoint_path)
-```
+Single-chain workflows are nonperiodic by default. Enable explicit periodic boundary conditions with `--periodic` for workflows such as duplex melting.
 
-## Tests And Docs
+## Outputs
 
-Run the default CPU test suite:
+MD runs write a DCD trajectory, state and force-group logs, checkpoint, final PDB, and `args.json`. REMD runs use OpenMMTools NetCDF storage as the restart source of truth and can extract trajectories by replica or temperature.
 
-```bash
-python -m pytest -q
-```
-
-Build the Sphinx docs:
-
-```bash
-sphinx-build -b html docs docs/_build/html
-```
-
-Build package artifacts:
-
-```bash
-python -m build
-```
+The [output reference](docs/reference/outputs.md) describes filenames, restart behavior, and provenance metadata.
 
 ## Documentation
 
-Primary documentation lives under `docs/`. Developer-only design notes and code-review reports live under `docs/dev/` and are intentionally excluded from the public documentation narrative.
+- [Quick start](docs/quickstart.md)
+- [Prepare and run MD](docs/tutorials/prepare-and-run-md.md)
+- [Energy decomposition](docs/tutorials/energy-decomposition.md)
+- [REMD](docs/tutorials/remd.md)
+- [API reference](docs/reference/api.md)
+- [CLI reference](docs/reference/cli.md)
+- [Force-field reference](docs/reference/forcefield.md)
+- [Benchmarks](docs/benchmarks/index.md)
+- [Data provenance](cranberry/data/README.md)
 
-Start here:
+## Citation
 
-- [Installation](https://github.com/yihengwuKP/cranberry/blob/main/docs/installation.md)
-- [Quickstart](https://github.com/yihengwuKP/cranberry/blob/main/docs/quickstart.md)
-- [API reference](https://github.com/yihengwuKP/cranberry/blob/main/docs/reference/api.md)
-- [CLI reference](https://github.com/yihengwuKP/cranberry/blob/main/docs/reference/cli.md)
-- [Outputs reference](https://github.com/yihengwuKP/cranberry/blob/main/docs/reference/outputs.md)
-- [Force-field reference](https://github.com/yihengwuKP/cranberry/blob/main/docs/reference/forcefield.md)
-- [Benchmarks](https://github.com/yihengwuKP/cranberry/blob/main/docs/benchmarks/index.md)
+Please cite:
 
-Tutorials:
+> Y. Wu, R. Alessandri, A. E. Coraor, X. Peng, P. F. Zubieta Rico, K. Liebl, K. Trinh, T. R. Sosnick, and J. J. de Pablo, "CRANBERRY: An RNA Dynamics Model with Sugar Puckering and Noncanonical Base Pairing," bioRxiv (2026). https://doi.org/10.64898/2026.01.12.699131
 
-- [Energy decomposition](https://github.com/yihengwuKP/cranberry/blob/main/docs/tutorials/energy-decomposition.md)
-- [Prepare and run MD](https://github.com/yihengwuKP/cranberry/blob/main/docs/tutorials/prepare-and-run-md.md)
-- [REMD](https://github.com/yihengwuKP/cranberry/blob/main/docs/tutorials/remd.md)
-
-Developer notes:
-
-- [Development environment](https://github.com/yihengwuKP/cranberry/blob/main/docs/dev/development-environment.md)
-- [Project program](https://github.com/yihengwuKP/cranberry/blob/main/docs/dev/program.md)
-- [Roadmap](https://github.com/yihengwuKP/cranberry/blob/main/docs/dev/roadmap.md)
-- [v1 plan](https://github.com/yihengwuKP/cranberry/blob/main/docs/dev/cranberry-v1-plan.md)
-- [Migration from OpenMM-CGRNA](https://github.com/yihengwuKP/cranberry/blob/main/docs/dev/migration-from-openmm-cgrna.md)
-- [Reference output generation](https://github.com/yihengwuKP/cranberry/blob/main/docs/dev/reference-output-generation.md)
-- [Next Codex handoff](https://github.com/yihengwuKP/cranberry/blob/main/docs/dev/next-codex-handoff.md)
-- [ADR index](https://github.com/yihengwuKP/cranberry/blob/main/docs/dev/adr/README.md)
+Machine-readable citation metadata are provided in [CITATION.cff](CITATION.cff).
 
 ## License
 
-MIT.
+CRANBERRY code, model assets, and project-authored fixtures are released under the MIT License. PDB-derived inputs originate from the wwPDB archive under CC0. See [LICENSE](LICENSE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), and the [data provenance record](cranberry/data/README.md).
+
+Development instructions are in [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -104,13 +104,13 @@ restarted from: /tmp/cranberry-fixed-md-log-probe/checkpoint.chk</code></pre>
 
   <h2>Validation</h2>
   <pre><code>env PYTHONPATH=/tmp/cranberry_md_restart_pr \
-  /home/cs7998/.conda/envs/cranberry-dev/bin/python \
+  <conda-env>/bin/python \
   -m pytest /tmp/cranberry_md_restart_pr/tests/test_md.py::test_run_md_restart_skips_minimization -q
 
 1 passed in 21.65s
 
 env PYTHONPATH=/tmp/cranberry_md_restart_pr \
-  /home/cs7998/.conda/envs/cranberry-dev/bin/python \
+  <conda-env>/bin/python \
   -m pytest /tmp/cranberry_md_restart_pr/tests/test_md.py -q
 
 16 passed in 166.29s (0:02:46)</code></pre>

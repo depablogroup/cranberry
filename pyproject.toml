@@ -7,8 +7,8 @@ name = "cranberry-rna"
 version = "1.0.0a1"
 description = "Coarse-grained RNA simulations with OpenMM."
 readme = "README.md"
-license-files = ["LICENSE"]
-requires-python = ">=3.10"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+requires-python = ">=3.11,<3.12"
 license = "MIT"
 authors = [
   {name = "CRANBERRY developers"}
@@ -17,9 +17,7 @@ classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
   "Topic :: Scientific/Engineering :: Chemistry",
 ]
 dependencies = [
@@ -67,6 +65,8 @@ include-package-data = true
 cranberry = [
   "data/README.md",
   "data/examples/*.pdb",
+  "data/examples/aa/*/*.pdb",
+  "data/examples/aa/*/*.md",
   "data/forcefields/*.h5",
   "data/xml/*.xml",
 ]

@@ -4,11 +4,11 @@ Use the dedicated conda environment for developing the new `cranberry-rna` packa
 
 ```bash
 conda activate cranberry-dev
-cd /home/yihengwu/code/projects/RNA/CRANBERRY/cranberry
+cd <workspace>/cranberry
 python -m pip install -e ".[dev]"
 ```
 
-The environment was created with Python 3.11. This is the primary development Python for the new package. The package support floor is planned as Python 3.10 unless dependency constraints force a change.
+The environment was created with Python 3.11. This is the supported development and runtime Python for the current release.
 
 Verify the editable install:
 

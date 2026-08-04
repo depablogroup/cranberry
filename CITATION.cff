@@ -1,0 +1,53 @@
+cff-version: 1.2.0
+message: "If you use cranberry-rna, please cite the CRANBERRY preprint."
+title: "cranberry-rna"
+type: software
+version: "1.0.0a1"
+url: "https://github.com/yihengwuKP/cranberry"
+repository-code: "https://github.com/yihengwuKP/cranberry"
+license: MIT
+authors:
+  - family-names: Wu
+    given-names: Yiheng
+  - family-names: Alessandri
+    given-names: Riccardo
+  - family-names: Coraor
+    given-names: Aria E.
+  - family-names: Peng
+    given-names: Xiangda
+  - family-names: Zubieta Rico
+    given-names: Pablo F.
+  - family-names: Liebl
+    given-names: Korbinian
+  - family-names: Trinh
+    given-names: Kha
+  - family-names: Sosnick
+    given-names: Tobin R.
+  - family-names: de Pablo
+    given-names: Juan J.
+preferred-citation:
+  type: article
+  title: "CRANBERRY: An RNA Dynamics Model with Sugar Puckering and Noncanonical Base Pairing"
+  year: 2026
+  doi: "10.64898/2026.01.12.699131"
+  url: "https://doi.org/10.64898/2026.01.12.699131"
+  journal: bioRxiv
+  authors:
+    - family-names: Wu
+      given-names: Yiheng
+    - family-names: Alessandri
+      given-names: Riccardo
+    - family-names: Coraor
+      given-names: Aria E.
+    - family-names: Peng
+      given-names: Xiangda
+    - family-names: Zubieta Rico
+      given-names: Pablo F.
+    - family-names: Liebl
+      given-names: Korbinian
+    - family-names: Trinh
+      given-names: Kha
+    - family-names: Sosnick
+      given-names: Tobin R.
+    - family-names: de Pablo
+      given-names: Juan J.
