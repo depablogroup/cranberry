@@ -8,6 +8,7 @@ def test_packaged_forcefield_assets_exist():
     assert "cranberry-v1-alpha.1.h5" in available_forcefields()
     assert data_path("forcefields/cranberry-v1-alpha.1.h5").is_file()
     assert data_path("xml/cranberry.xml").is_file()
+    assert data_path("examples/aa/1zih/1zih.pdb").is_file()
 
 
 def test_model_registry_resolves_default():

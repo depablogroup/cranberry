@@ -8,6 +8,7 @@ import sys
 import warnings
 from pathlib import Path
 
+import numpy as np
 import pytest
 from openmm import app, unit
 
@@ -123,6 +124,63 @@ def test_translate_netcdf_to_dcd_temperature_mode(tmp_path):
 
 
 @pytest.mark.remd
+def test_run_remd_periodic_extra_start_uses_one_common_box(tmp_path):
+    pdb = data_path('examples/2ntCG_cg_vs_conect.pdb')
+    source = app.PDBFile(str(pdb))
+    coordinates = source.positions.value_in_unit(unit.nanometer)
+    center = np.mean(coordinates, axis=0)
+    expanded_positions = (center + 2.0 * (coordinates - center)) * unit.nanometer
+    extra = tmp_path / 'expanded.pdb'
+    with extra.open('w') as handle:
+        app.PDBFile.writeFile(source.topology, expanded_positions, handle, keepIds=True)
+    conect = ''.join(
+        line
+        for line in Path(pdb).read_text().splitlines(keepends=True)
+        if line.startswith('CONECT')
+    )
+    extra.write_text(extra.read_text().replace('END\n', conect + 'END\n'))
+
+    expanded = app.PDBFile(str(extra))
+    expanded_coordinates = expanded.positions.value_in_unit(unit.nanometer)
+    expanded_span = float(
+        np.max(np.max(expanded_coordinates, axis=0) - np.min(expanded_coordinates, axis=0))
+    )
+    expected_box_size = expanded_span + 5.0
+
+    result = run_remd(
+        RemdRunConfig(
+            pdb_path=pdb,
+            steps=1,
+            output_dir=tmp_path,
+            temperature_ladder=TemperatureLadderSpec(temperatures=(298.0, 318.0)),
+            swap_steps=1,
+            extra_start_pdb=extra,
+            periodic=True,
+            box_padding_nanometer=2.5,
+            overwrite=True,
+        )
+    )
+
+    args = json.loads(result.args_path.read_text())
+    vectors = np.asarray(args['periodic_box_vectors_nanometer'])
+    assert vectors == pytest.approx(np.diag([expected_box_size] * 3))
+    assert args['periodic_box_vectors_present'] is True
+
+
+def test_run_remd_rejects_extra_start_with_different_topology(tmp_path):
+    with pytest.raises(ValueError, match='same ordered atoms and bonds'):
+        run_remd(
+            RemdRunConfig(
+                pdb_path=data_path('examples/2ntCG_cg_vs_conect.pdb'),
+                extra_start_pdb=data_path('examples/1zih_cg_vs_conect.pdb'),
+                steps=1,
+                output_dir=tmp_path,
+                overwrite=True,
+            )
+        )
+
+
+@pytest.mark.remd
 def test_run_remd_accepts_extra_start_pdb_and_records_metadata(tmp_path):
     pdb = data_path('examples/2ntCG_cg_vs_conect.pdb')
     result = run_remd(
@@ -199,6 +257,34 @@ def test_run_remd_rejects_ladder_mismatch_on_restart(tmp_path):
                 temperature_ladder=TemperatureLadderSpec(temperatures=(298.0, 330.0)),
                 swap_steps=1,
                 restart_from=first.output_netcdf_path,
+                overwrite=True,
+            )
+        )
+
+
+@pytest.mark.remd
+def test_run_remd_rejects_incompatible_restart_metadata(tmp_path):
+    pdb = data_path('examples/2ntCG_cg_vs_conect.pdb')
+    first = run_remd(
+        RemdRunConfig(
+            pdb_path=pdb,
+            steps=1,
+            output_dir=tmp_path,
+            temperature_ladder=TemperatureLadderSpec(temperatures=(298.0, 318.0)),
+            swap_steps=1,
+            overwrite=True,
+        )
+    )
+
+    with pytest.raises(ValueError, match='restart configuration.*periodic'):
+        run_remd(
+            RemdRunConfig(
+                pdb_path=pdb,
+                steps=1,
+                temperature_ladder=TemperatureLadderSpec(temperatures=(298.0, 318.0)),
+                swap_steps=1,
+                restart_from=first.output_netcdf_path,
+                periodic=True,
                 overwrite=True,
             )
         )

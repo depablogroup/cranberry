@@ -112,6 +112,15 @@ def test_cli_inspect_input(capsys):
     assert "residues: 2" in captured.out
 
 
+def test_cli_energy_json(capsys):
+    path = data_path("examples/2ntCG_cg_vs_conect.pdb")
+    assert main(["energy", str(path), "--platform", "CPU", "--json"]) == 0
+    captured = capsys.readouterr()
+    assert "settings: model=cranberry-v1-alpha.1" in captured.out
+    assert "timestep=" not in captured.out
+    assert '"total"' in captured.out
+
+
 def test_cli_md_smoke(tmp_path, monkeypatch, capsys):
     path = data_path("examples/2ntCG_cg_vs_conect.pdb")
     monkeypatch.chdir(tmp_path)

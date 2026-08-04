@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CRANBERRY publication readiness report</title>
+  <style>
+    body { max-width: 920px; margin: 2rem auto; padding: 0 1rem; font: 16px/1.55 system-ui, sans-serif; color: #202124; }
+    h1, h2 { line-height: 1.2; }
+    code { background: #f2f3f5; padding: 0.1rem 0.3rem; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #c7c9cc; padding: 0.55rem; text-align: left; vertical-align: top; }
+    .pass { color: #176b37; font-weight: 700; }
+    .gate { color: #8a4b08; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>CRANBERRY publication readiness report</h1>
+  <p><strong>Date:</strong> 2026-08-03</p>
+  <p>
+    This report records the local pre-publication audit and implementation work.
+    No commit or push was made as part of this work.
+  </p>
+
+  <h2>Implemented</h2>
+  <table>
+    <thead><tr><th>Area</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td>Public documentation</td><td>Replaced the developer-oriented README with researcher-facing installation, capabilities, workflows, outputs, citation, and licensing guidance.</td></tr>
+      <tr><td>Citation</td><td>Added <code>CITATION.cff</code>, a public citation page, and the CRANBERRY bioRxiv DOI.</td></tr>
+      <tr><td>Asset provenance</td><td>Added MIT ownership statements, wwPDB CC0 attribution, Web 3DNA attribution, source descriptions, and SHA-256 records for model and structure assets.</td></tr>
+      <tr><td>Packaging</td><td>Included the nested atomistic 1ZIH fixture and third-party notice in built distributions. Restricted metadata to Python 3.11.</td></tr>
+      <tr><td>REMD</td><td>Validated alternate-start topology, generated one box from the largest conformation, guaranteed per-side padding, propagated common vectors to all sampler states, recorded vectors, and rejected incompatible restart metadata.</td></tr>
+      <tr><td>CLI</td><td>Fixed <code>cranberry energy --json</code>, which previously crashed while formatting a nonexistent timestep argument.</td></tr>
+      <tr><td>Privacy</td><td>Removed current machine-specific home paths and benchmark hostnames. New snapshots redact absolute paths and host fields. Added a local/CI publication privacy check.</td></tr>
+      <tr><td>CI</td><td>Added distribution building, wheel-content verification, and a full-history Gitleaks job.</td></tr>
+      <tr><td>Git hygiene</td><td>Set the repository-local author to the GitHub noreply address and deleted eight merged branches. Two unmerged remote branches remain intentionally.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Scientific asset audit</h2>
+  <ul>
+    <li>All packaged model and example assets have documented SHA-256 hashes.</li>
+    <li>Fresh raw RCSB inputs for 1ZIH and 2MI0 pass the current coarse-graining route.</li>
+    <li>Raw 157D, 1L2X, and 5ML7 contain water, ligand, or ion records and require canonical RNA cleaning before coarse-graining; public text does not claim arbitrary raw PDB files are accepted.</li>
+    <li>The packaged folded and extended GGCGCAAGCC starts have the same ordered 80-atom topology. Their spans are 1.9515 and 3.0597 nm, giving a 7.0597 nm common box at 2.0 nm padding.</li>
+  </ul>
+
+  <h2>Validation</h2>
+  <ul>
+    <li class="pass">Full suite: 77 passed in 308.27 seconds.</li>
+    <li class="pass">Sphinx public documentation build succeeded.</li>
+    <li class="pass">Publication privacy pre-commit hook passed.</li>
+    <li class="pass">Final wheel and source distribution built successfully.</li>
+    <li class="pass">Wheel contains the model H5/XML, generated examples, nested atomistic 1ZIH PDB/README, MIT license, and third-party notice.</li>
+    <li>One NumPy binary-ABI runtime warning appears during OpenMMTools import; no test failed and it is environment-specific.</li>
+  </ul>
+
+  <h2>Remaining publication gates</h2>
+  <ol>
+    <li class="gate">Review, commit, and push the local changes.</li>
+    <li class="gate">Confirm GitHub email privacy and command-line push blocking are enabled in account settings.</li>
+    <li class="gate">Obtain passing GitHub Actions results, including Gitleaks, on the pushed commit.</li>
+    <li class="gate">Make the repository public, then require the CI checks on <code>main</code> with branch protection or a ruleset.</li>
+  </ol>
+
+  <h2>Accepted residual metadata</h2>
+  <p>
+    Historical commits still contain an old university email and two internal
+    service-style author addresses. These are public identity/infrastructure
+    metadata, not credentials. History rewriting was deferred. If their
+    disclosure is unacceptable, rewrite history before making the repository
+    public; otherwise they are a low-severity privacy issue.
+  </p>
+</body>
+</html>

@@ -43,7 +43,7 @@ conda env list
 From the GPU workshop root:
 
 ```bash
-cd /home/yihengwu/code/projects/RNA/CRANBERRY/CRANBERRY_workshop/cranberry-workshop-919771f4-gpu
+cd <workspace>/CRANBERRY_workshop/cranberry-workshop-919771f4-gpu
 conda run -n cranberry-workshop-gpu python workshop/check_gpu.py
 ```
 
@@ -60,7 +60,7 @@ GPU platform check OK.
 Use a separate `RUN_NAME` so reference generation does not overwrite existing workshop outputs:
 
 ```bash
-cd /home/yihengwu/code/projects/RNA/CRANBERRY/CRANBERRY_workshop/cranberry-workshop-919771f4-gpu
+cd <workspace>/CRANBERRY_workshop/cranberry-workshop-919771f4-gpu
 conda run -n cranberry-workshop-gpu bash -lc 'NSTEPS=10 NRECORD=2 RUN_NAME=1zih_gpu_smoke bash workshop/run_1zih_gpu.sh'
 ```
 
@@ -88,7 +88,7 @@ Note: the workshop script currently writes the legacy checkpoint typo `checkpnt.
 The default workshop GPU run is:
 
 ```bash
-cd /home/yihengwu/code/projects/RNA/CRANBERRY/CRANBERRY_workshop/cranberry-workshop-919771f4-gpu
+cd <workspace>/CRANBERRY_workshop/cranberry-workshop-919771f4-gpu
 conda run -n cranberry-workshop-gpu bash workshop/run_1zih_gpu.sh
 ```
 

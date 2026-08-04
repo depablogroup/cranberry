@@ -1,12 +1,17 @@
 import csv
 import json
 
+import numpy as np
 import pytest
 from openmm import app, unit
 
 import cranberry.md as md_module
 from cranberry.data import data_path
-from cranberry.forcefield import CranberryForceField, validate_periodic_box_cutoffs
+from cranberry.forcefield import (
+    CranberryForceField,
+    prepare_common_periodic_positions,
+    validate_periodic_box_cutoffs,
+)
 from cranberry.md import calculate_langevin_friction, create_simulation, run_md
 from cranberry.validation import validate_canonical_pdb
 
@@ -43,6 +48,25 @@ def test_create_system_periodic_switches_legacy_pbc_forces():
     assert not _force_by_name(periodic, "bond").usesPeriodicBoundaryConditions()
     assert not _force_by_name(periodic, "angle").usesPeriodicBoundaryConditions()
     assert not _force_by_name(periodic, "dihedral").usesPeriodicBoundaryConditions()
+
+
+def test_common_periodic_positions_guarantee_requested_padding():
+    pdb = app.PDBFile(str(data_path("examples/2ntCG_cg_vs_conect.pdb")))
+    coordinates = pdb.positions.value_in_unit(unit.nanometer)
+    skewed = np.vstack([coordinates, coordinates[0], coordinates[0]]) * unit.nanometer
+    padding_nm = 2.5
+
+    (centered,) = prepare_common_periodic_positions(
+        pdb.topology,
+        (skewed,),
+        padding_nm * unit.nanometer,
+    )
+
+    centered_nm = centered.value_in_unit(unit.nanometer)
+    box_size_nm = pdb.topology.getUnitCellDimensions().value_in_unit(unit.nanometer)[0]
+    tolerance = 1.0e-12
+    assert float(np.min(centered_nm)) >= padding_nm - tolerance
+    assert float(np.max(centered_nm)) <= box_size_nm - padding_nm + tolerance
 
 
 def test_periodic_box_cutoff_validation_rejects_too_small_box():

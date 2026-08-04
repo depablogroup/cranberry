@@ -25,7 +25,7 @@ mpiplus.run_single_node(... sampler._reporter.open, mode='a' ...)</code></pre>
 
   <h2>Validation</h2>
   <ul>
-    <li><code>conda run -n cranberry-dev which mpirun</code> found <code>/home/yihengwu/miniforge3/envs/cranberry-dev/bin/mpirun</code>.</li>
+    <li><code>conda run -n cranberry-dev which mpirun</code> found <code><conda-env>/bin/mpirun</code>.</li>
     <li><code>conda run -n cranberry-dev python -c "import mpi4py, openmmtools, mpiplus"</code> passed with mpi4py 4.1.2 and OpenMMTools 0.26.0.</li>
     <li><code>conda run -n cranberry-dev mpirun -n 2 python -c "from mpi4py import MPI; ..."</code> reported size 2.</li>
     <li><code>conda run -n cranberry-dev python -m pytest -q tests/test_remd.py::test_run_remd_mpi_restart_reopens_existing_storage</code> failed as intended with the NetCDF HDF restart error.</li>

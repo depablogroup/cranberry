@@ -4,8 +4,13 @@ This note is for the next Codex session working in CRANBERRY/cranberry.
 
 ## Current State
 
+- As of 2026-08-04, a substantial publication-readiness change set is present in the worktree but is not committed or pushed. The exact local status is recorded below; do not assume these changes are on `main`.
+- The local publication-readiness report is `docs/dev/progress/publication-readiness-report.html`.
+- The final local validation passed: 77 tests, Sphinx build, privacy hook, citation parsing, final wheel/source build, and wheel asset checks. The test run took 308.27 s and emitted one pre-existing NumPy binary-ABI warning during OpenMMTools import.
+- GitHub-side gates remain: confirm account email privacy and command-line push blocking, commit/push, obtain passing Actions including Gitleaks, make the repository public, and protect `main`.
+
 - Current HEAD is `813b0a5 Update REMD Langevin defaults`.
-- Working tree was clean after that commit when this handoff was updated.
+- The worktree is not clean: the publication-readiness change set described below is uncommitted and unstaged.
 - Phase 5 REMD is closed.
 - Phase 6 PBC has started with an initial explicit-PBC implementation slice; double-stranded melting/REMD correctness remains the next priority.
 - The terminal-phosphate placement heuristic is treated as fixed v1 behavior.
@@ -52,6 +57,24 @@ Read these files before changing anything non-trivial:
 - Code review reports should include the essential code path and algorithm snippets, not just high-level summaries.
 
 
+## Publication-Readiness Worktree
+
+The current uncommitted change set includes:
+
+- Researcher-facing `README.md`, `CITATION.cff`, `docs/citation.md`, and `THIRD_PARTY_NOTICES.md`.
+- Expanded `cranberry/data/README.md` with model/fixture hashes and provenance, including PDB and Web 3DNA attribution.
+- Python metadata narrowed to `>=3.11,<3.12`; package data now includes the nested atomistic 1ZIH fixture and README.
+- Benchmark snapshot sanitization for absolute paths and hostnames, with current committed YAML snapshots normalized.
+- `scripts/check-publication-privacy.sh`, a pre-commit hook, and CI checks for privacy, distribution builds, package assets, and Gitleaks.
+- REMD shared-box initialization for multiple starting conformations, bounding-box-midpoint centering, exact ordered atom/bond topology validation, common box-vector provenance, and restart metadata compatibility checks.
+- A CLI regression fix for `cranberry energy --json`, which previously accessed a nonexistent timestep argument.
+- Tests covering the new behavior in `tests/test_cli.py`, `tests/test_md.py`, and `tests/test_remd.py`.
+- Developer path/hostname sanitization in the existing reports and reference-generation notes.
+
+The local repository identity is configured as `Yiheng Wu <39614623+yihengwuKP@users.noreply.github.com>`. Historical commits still contain old university and internal service-style author addresses. They are not credentials; history rewriting was intentionally deferred. Current files do not expose those paths or benchmark hostnames.
+
+The final artifacts were built outside the repository under `/tmp/cranberry-publication-final-20260803/`. They are validation outputs, not release artifacts to commit.
+
 ## Latest REMD Performance Findings
 
 The most recent local profiling focused on why 8-temperature MPI+MPS REMD seemed much slower than 8 independent MPS MD runners on the local RTX 2060. The updated conclusion is that short benchmark runs were dominated by startup and should not be interpreted as steady-state REMD overhead.
@@ -78,9 +101,11 @@ The next major user-facing work is continuing Phase 6 PBC:
 - separate three concepts in design and code: box metadata, force-periodic physics, and trajectory wrapping
 - extend validation around the ported force-level periodic behavior for WCA, spline, Debye-Huckel, stacking, pairing, and sugar-pucker/custom forces
 - keep pre-commit tests small; use unit-level force audits and minimal CPU smoke tests, with heavier REMD/PBC integration tests outside the fast pre-commit subset
-- include the canonical Cranberry citation in the top-level README before public v1
+- The canonical Cranberry citation is now in the top-level README and `CITATION.cff`; verify the rendered links after push.
 
 REMD performance follow-up should be lower priority than correctness unless the user asks for it. If continuing performance work, use warmed or long MPI+MPS runs, compare against the existing direct MPS MD baseline, and avoid drawing conclusions from 2-5 iteration runs.
+Before any public release, review the publication-readiness report and the complete uncommitted diff, then commit and push only after explicit approval. After the first successful GitHub Actions run, make the repository public and require the CI checks through branch protection or a ruleset. Do not rewrite history unless the historical author metadata is judged unacceptable.
+
 
 This handoff is for a fresh Codex session. Re-read `AGENTS.md`, `docs/dev/program.md`, `docs/dev/cranberry-v1-plan.md`, `docs/dev/remd-design.md`, `docs/dev/progress/phase-5-remd-report.html`, and the latest report under `docs/dev/progress/`, then continue Phase 6 with double-stranded melting validation, restart checks, and trajectory wrapping semantics.
 
@@ -92,6 +117,6 @@ This handoff is for a fresh Codex session. Re-read `AGENTS.md`, `docs/dev/progra
 - Treat the fixed terminal-phosphate heuristic as part of the current model contract.
 - Keep tests CPU-first unless a specific task requires otherwise.
 - CUDA REMD with online analysis enabled (`--n-analysis` > 0) can fail in PyMBAR/JAX GPU allocation even when OpenMM CUDA is fine; use `--n-analysis 0` or force JAX to CPU for production CUDA runs unless online MBAR is explicitly needed.
-- Latest committed-code validation before `813b0a5`: `conda run -n cranberry-dev python -m pytest -q tests/test_remd.py` passed with 12 tests in 111.23 s, then focused post-rebase `tests/test_remd.py::test_run_remd_and_translate_real_openmmtools` passed. Pre-commit also ran pytest and passed during commit.
+- Latest committed-code validation before `813b0a5`: `conda run -n cranberry-dev python -m pytest -q tests/test_remd.py` passed with 12 tests in 111.23 s, then focused post-rebase `tests/test_remd.py::test_run_remd_and_translate_real_openmmtools` passed. Pre-commit also ran pytest and passed during commit. The newer uncommitted publication-readiness tree passes 77 tests; do not describe that result as a committed validation until the change set is committed.
 - After the profiling session, MPS was stopped with `echo quit | nvidia-cuda-mps-control`. Check `nvidia-smi` if a future session suspects stray GPU processes.
 - Do not claim the full melting workflow complete until double-stranded fixtures, sampler/box state, restart behavior, and DCD output semantics are tested together.

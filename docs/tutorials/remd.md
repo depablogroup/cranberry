@@ -14,9 +14,9 @@ cranberry remd cranberry/data/examples/2ntCG_cg_vs_conect.pdb   --steps 50000   
 
 Online analysis is an OpenMMTools/PyMBAR convenience path, not part of the MD propagation itself. PyMBAR uses JAX, so online analysis can add noticeable overhead and may allocate GPU memory separately from OpenMM when JAX chooses a CUDA backend. For production CUDA REMD runs, use `--n-analysis 0` unless you specifically need online MBAR estimates during the run. If you want online analysis but do not want JAX competing with OpenMM on the GPU, launch with `JAX_PLATFORM_NAME=cpu`. Cranberry records `online_analysis_interval` and `jax_platform_name_env` in `args.json`; when online analysis is active, the CLI also prints the `JAX_PLATFORM_NAME` value or `unset`.
 
-Use `--extra-start-pdb` to provide an additional canonical CG PDB whose coordinates seed alternating initial replicas, useful for melting-style starts where the main PDB and an extra starting structure should both be represented.
+Use `--extra-start-pdb` to provide an additional canonical CG PDB whose coordinates seed alternating initial replicas, useful for melting-style starts where the main PDB and an extra starting structure should both be represented. The two PDBs must contain the same atoms and bonds in the same order. With `--periodic`, Cranberry sizes one cubic box from the largest span across all starting conformations, centers each conformation independently in that shared box, and records the box vectors in `args.json`.
 
-The primary REMD restart artifact is `output.nc`. Cranberry also writes `args.json` for provenance. To inspect the trajectory as DCD files:
+The primary REMD restart artifact is `output.nc`. Cranberry also writes `args.json` for provenance. On restart, Cranberry rejects changes to the input structure hash, model, swap interval, salt concentration, timestep, periodic mode, or box padding; it separately verifies the stored temperature ladder. To inspect the trajectory as DCD files:
 
 ```bash
 cranberry remd-extract remd-out/output.nc cranberry/data/examples/2ntCG_cg_vs_conect.pdb --by-replica --output-dir remd-out

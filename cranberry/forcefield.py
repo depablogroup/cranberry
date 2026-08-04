@@ -128,9 +128,36 @@ class _TopologyData:
 def prepare_periodic_positions(topology: app.Topology, positions, box_padding=2.0 * unit.nanometer):
     """Center positions in a generated cubic periodic box and attach it to topology."""
 
-    box_size, translation = _periodic_box_size_and_translation(positions, box_padding)
+    return prepare_common_periodic_positions(topology, (positions,), box_padding)[0]
+
+
+def prepare_common_periodic_positions(
+    topology: app.Topology,
+    position_sets,
+    box_padding=2.0 * unit.nanometer,
+):
+    """Center multiple conformations independently in one shared cubic box."""
+
+    position_sets = tuple(position_sets)
+    if not position_sets:
+        raise ValueError("at least one position set is required")
+    box_sizes = [
+        _periodic_box_size_and_translation(positions, box_padding)[0]
+        for positions in position_sets
+    ]
+    box_size = max(
+        box_sizes,
+        key=lambda size: size.value_in_unit(unit.nanometer),
+    )
     _set_cubic_box_vectors(topology, box_size)
-    return positions + translation
+    half_box_nm = box_size.value_in_unit(unit.nanometer) / 2.0
+    centered = []
+    for positions in position_sets:
+        coordinates = positions.value_in_unit(unit.nanometer)
+        center_nm = 0.5 * (np.min(coordinates, axis=0) + np.max(coordinates, axis=0))
+        translation = (-center_nm + half_box_nm) * unit.nanometer
+        centered.append(positions + translation)
+    return tuple(centered)
 
 
 def _configure_periodic_box(topology: app.Topology, positions, box_padding) -> None:
@@ -145,7 +172,7 @@ def _periodic_box_size_and_translation(positions, box_padding):
     box_size_nm = float(np.max(span)) + 2.0 * padding.value_in_unit(unit.nanometer)
     if box_size_nm <= 0:
         raise ValueError("periodic box size must be positive")
-    center_nm = np.mean(coordinates, axis=0)
+    center_nm = 0.5 * (np.min(coordinates, axis=0) + np.max(coordinates, axis=0))
     translation_nm = -center_nm + box_size_nm / 2.0
     return box_size_nm * unit.nanometer, translation_nm * unit.nanometer
 

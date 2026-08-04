@@ -23,6 +23,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Check publication privacy
+        run: bash scripts/check-publication-privacy.sh
+
       - name: Set up conda
         uses: conda-incubator/setup-miniconda@v3
         with:
@@ -42,3 +45,46 @@ jobs:
 
       - name: Build docs
         run: sphinx-build -b html docs docs/_build/html
+
+      - name: Build distributions
+        run: python -m build
+
+      - name: Verify packaged publication assets
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          wheel = next(Path("dist").glob("*.whl"))
+          with ZipFile(wheel) as archive:
+              names = set(archive.namelist())
+          required_suffixes = {
+              "cranberry/data/examples/aa/1zih/1zih.pdb",
+              "cranberry/data/examples/aa/1zih/README.md",
+              "THIRD_PARTY_NOTICES.md",
+          }
+          missing = {
+              suffix
+              for suffix in required_suffixes
+              if not any(name.endswith(suffix) for name in names)
+          }
+          if missing:
+              raise SystemExit(f"wheel is missing publication assets: {sorted(missing)}")
+          PY
+
+  security:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

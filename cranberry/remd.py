@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import warnings
 from dataclasses import dataclass, field
@@ -12,7 +13,12 @@ import numpy as np
 import openmm as mm
 from openmm import app, unit
 
-from cranberry.forcefield import CranberryForceField, get_model_spec, prepare_periodic_positions, validate_periodic_box_cutoffs
+from cranberry.forcefield import (
+    CranberryForceField,
+    get_model_spec,
+    prepare_common_periodic_positions,
+    validate_periodic_box_cutoffs,
+)
 from cranberry.md import _present_force_group_names, _sha256, _write_args, calculate_langevin_friction
 from cranberry.validation import validate_canonical_pdb
 
@@ -156,10 +162,25 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
         _ensure_outputs_available(*expected_outputs)
     elif config.restart_from is not None and not output_netcdf_path.exists():
         raise FileNotFoundError(f'REMD NetCDF restart not found: {output_netcdf_path}')
+    if config.restart_from is not None:
+        _validate_restart_metadata(args_path, config, get_model_spec(config.model).name)
 
     pdb = app.PDBFile(str(config.pdb_path))
+    extra_pdb = _load_extra_start_pdb(pdb, config.extra_start_pdb)
+    raw_position_sets = [pdb.positions]
+    if extra_pdb is not None:
+        raw_position_sets.append(extra_pdb.positions)
     box_padding = config.box_padding_nanometer * unit.nanometer
-    positions = prepare_periodic_positions(pdb.topology, pdb.positions, box_padding) if config.periodic else pdb.positions
+    if config.periodic:
+        start_positions = prepare_common_periodic_positions(
+            pdb.topology,
+            raw_position_sets,
+            box_padding,
+        )
+    else:
+        start_positions = tuple(raw_position_sets)
+    positions = start_positions[0]
+    common_box_vectors = pdb.topology.getPeriodicBoxVectors() if config.periodic else None
     forcefield = CranberryForceField(config.model)
     reference_temperature = explicit_temperatures[0] if explicit_temperatures is not None else ladder_spec.t_min
     system = forcefield.createSystem(
@@ -170,6 +191,9 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
         periodic=config.periodic,
         box_padding=box_padding,
     )
+    if common_box_vectors is not None:
+        pdb.topology.setPeriodicBoxVectors(common_box_vectors)
+        system.setDefaultPeriodicBoxVectors(*common_box_vectors)
     validate_periodic_box_cutoffs(system)
     openmmtools, mcmc, states, multistate = _load_openmmtools()
     mpiplus = _load_mpiplus()
@@ -200,7 +224,6 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
         _apply_sampler_platform(sampler, openmmtools, config.platform)
         reference_state = states.ThermodynamicState(system, temperature=reference_temperature * unit.kelvin)
         n_replicas = len(explicit_temperatures) if explicit_temperatures is not None else ladder_spec.n_replicas
-        start_positions = _initial_positions(pdb, positions, config.extra_start_pdb, periodic=config.periodic, box_padding=box_padding)
         sampler_box_vectors = pdb.topology.getPeriodicBoxVectors() if config.periodic else None
         sampler_states = [
             states.SamplerState(start_positions[index % len(start_positions)], box_vectors=sampler_box_vectors)
@@ -513,15 +536,74 @@ def _mpi_barrier(mpiplus) -> None:
         barrier()
 
 
-def _initial_positions(pdb: app.PDBFile, primary_positions, extra_start_pdb: Path | None, *, periodic: bool, box_padding):
-    positions = [primary_positions]
-    if extra_start_pdb is not None:
-        extra_pdb = app.PDBFile(str(extra_start_pdb))
-        if extra_pdb.topology.getNumAtoms() != pdb.topology.getNumAtoms():
-            raise ValueError('extra-start-pdb must contain the same number of atoms as the primary PDB')
-        extra_positions = prepare_periodic_positions(extra_pdb.topology, extra_pdb.positions, box_padding) if periodic else extra_pdb.positions
-        positions.append(extra_positions)
-    return positions
+def _load_extra_start_pdb(pdb: app.PDBFile, extra_start_pdb: Path | None) -> app.PDBFile | None:
+    if extra_start_pdb is None:
+        return None
+    extra_pdb = app.PDBFile(str(extra_start_pdb))
+    if _topology_signature(extra_pdb.topology) != _topology_signature(pdb.topology):
+        raise ValueError(
+            'extra-start-pdb must have the same ordered atoms and bonds as the primary PDB'
+        )
+    return extra_pdb
+
+
+def _topology_signature(topology: app.Topology):
+    atoms = tuple(
+        (
+            atom.residue.chain.index,
+            atom.residue.index,
+            atom.residue.name,
+            atom.name,
+            atom.element.symbol if atom.element is not None else None,
+        )
+        for atom in topology.atoms()
+    )
+    bonds = tuple(
+        sorted(
+            (min(first.index, second.index), max(first.index, second.index))
+            for first, second in topology.bonds()
+        )
+    )
+    return atoms, bonds
+
+
+def _validate_restart_metadata(
+    args_path: Path,
+    config: RemdRunConfig,
+    model_name: str,
+) -> None:
+    if not args_path.exists():
+        warnings.warn(
+            f'REMD restart metadata not found at {args_path}; compatibility checks are limited to the stored temperature ladder.',
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return
+    try:
+        stored = json.loads(args_path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f'Could not read REMD restart metadata from {args_path}: {exc}') from exc
+
+    expected = {
+        'pdb_sha256': _sha256(config.pdb_path),
+        'model': model_name,
+        'swap_steps': int(config.swap_steps),
+        'salt_millimolar': float(config.salt_concentration_millimolar),
+        'timestep_femtosecond': float(config.timestep_femtosecond),
+        'periodic': bool(config.periodic),
+        'box_padding_nanometer': float(config.box_padding_nanometer),
+    }
+    mismatches = []
+    for key, value in expected.items():
+        if key not in stored:
+            mismatches.append(f'{key}=missing (requested {value!r})')
+        elif stored[key] != value:
+            mismatches.append(f'{key}={stored[key]!r} (requested {value!r})')
+    if mismatches:
+        raise ValueError(
+            'REMD restart configuration does not match the existing args.json: '
+            + '; '.join(mismatches)
+        )
 
 
 def _warn_platform_mismatch(requested_platform: str | None, actual_platform: str | None) -> None:
@@ -642,6 +724,14 @@ def _build_remd_args(
             'bonds': sum(1 for _ in pdb.topology.bonds()),
         },
         'periodic_box_vectors_present': bool(config.periodic and box_vectors is not None),
+        'periodic_box_vectors_nanometer': (
+            [
+                [float(component.value_in_unit(unit.nanometer)) for component in vector]
+                for vector in box_vectors
+            ]
+            if config.periodic and box_vectors is not None
+            else None
+        ),
         'force_groups': _present_force_group_names(system),
         'sampler': 'ParallelTemperingSampler',
         'mcmc_move': mcmc_move,

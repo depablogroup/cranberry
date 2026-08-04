@@ -1,7 +1,7 @@
 schema_version: 1
 generated_at: '2026-07-17T20:54:51.116803+00:00'
-host: 'yihengwu-Precision-3630-Tower'
-pdb: '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+host: <host>
+pdb: 'cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
 gpu:
   name: NVIDIA GeForce RTX 2060
   driver_version: 595.71.05
@@ -14,11 +14,11 @@ runs:
     kind: 'single-md-cuda'
     returncode: 0
     command:
-      - '/home/yihengwu/miniforge3/envs/cranberry-dev/bin/python'
+      - '<environment>/bin/python'
       - '-m'
       - 'cranberry.cli.main'
       - md
-      - '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+      - 'cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
       - '--steps'
       - 20000
       - '--n-record'
@@ -50,11 +50,11 @@ runs:
     command:
       - parallel
       - 2
-      - '/home/yihengwu/miniforge3/envs/cranberry-dev/bin/python'
+      - '<environment>/bin/python'
       - '-m'
       - 'cranberry.cli.main'
       - md
-      - '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+      - 'cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
       - '--steps'
       - 20000
       - '--n-record'
@@ -87,11 +87,11 @@ runs:
     command:
       - parallel
       - 4
-      - '/home/yihengwu/miniforge3/envs/cranberry-dev/bin/python'
+      - '<environment>/bin/python'
       - '-m'
       - 'cranberry.cli.main'
       - md
-      - '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+      - 'cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
       - '--steps'
       - 20000
       - '--n-record'
@@ -126,11 +126,11 @@ runs:
     command:
       - parallel
       - 8
-      - '/home/yihengwu/miniforge3/envs/cranberry-dev/bin/python'
+      - '<environment>/bin/python'
       - '-m'
       - 'cranberry.cli.main'
       - md
-      - '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+      - 'cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
       - '--steps'
       - 20000
       - '--n-record'
@@ -167,11 +167,11 @@ runs:
     kind: 'remd-cuda-8temps'
     returncode: 0
     command:
-      - '/home/yihengwu/miniforge3/envs/cranberry-dev/bin/python'
+      - '<environment>/bin/python'
       - '-m'
       - 'cranberry.cli.main'
       - remd
-      - '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+      - 'cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
       - '--steps'
       - 20000
       - '--swap-steps'
@@ -235,7 +235,7 @@ runs:
       output_dcd_path: null
       output_netcdf_path: 'benchmarks/results/local_cuda_modes_ggcGCAAgcc_runs/remd_cuda_8temps/output.nc'
       overwrite: true
-      pdb_path: '/home/yihengwu/code/projects/RNA/CRANBERRY/cranberry/cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
+      pdb_path: 'cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb'
       pdb_sha256: 341f701020c33e4044cd998782b5c127f82da044dbafa424fc7ade5913de420a
       periodic: false
       periodic_box_vectors_present: false
