@@ -1,28 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-common_excludes=(
-  --glob '!.git/**'
-  --glob '!docs/_build/**'
-  --glob '!build/**'
-  --glob '!dist/**'
-  --glob '!*.egg-info/**'
-)
-
-if path_matches="$(
-  rg --hidden -n '/home/[^<[:space:]]|/Users/[^<[:space:]]' .     "${common_excludes[@]}"     --glob '!tests/**'     --glob '!scripts/check-publication-privacy.sh'
-)"; then
+path_matches="$(
+  git grep -nE '/home/[^<[:space:]]|/Users/[^<[:space:]]' -- .     ':(exclude)tests/**'     ':(exclude)scripts/check-publication-privacy.sh'     || true
+)"
+if [[ -n "$path_matches" ]]; then
   printf '%s\n' "Machine-specific home paths found:" "$path_matches" >&2
   exit 1
-elif [[ $? -ne 1 ]]; then
-  exit 2
 fi
 
-if host_matches="$(
-  rg -n '^host:' benchmarks/results     | grep -v 'host: <host>$'
-)"; then
-  printf '%s\n' "Unsanitized benchmark hostnames found:" "$host_matches" >&2
+host_matches="$(
+  git grep -n '^host:' -- benchmarks/results || true
+)"
+unsanitized_hosts=""
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  case "$line" in
+    *"host: <host>") ;;
+    *) unsanitized_hosts+="$line"$'\n' ;;
+  esac
+done <<< "$host_matches"
+if [[ -n "$unsanitized_hosts" ]]; then
+  printf '%s\n' "Unsanitized benchmark hostnames found:" "$unsanitized_hosts" >&2
   exit 1
-elif [[ ${PIPESTATUS[0]} -gt 1 ]]; then
-  exit 2
 fi
