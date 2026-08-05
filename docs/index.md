@@ -10,6 +10,7 @@ citation
 quickstart
 faq
 tutorials/prepare-and-run-md
+tutorials/packed-md-hpc
 tutorials/energy-decomposition
 tutorials/remd
 reference/api
