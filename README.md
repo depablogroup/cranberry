@@ -91,6 +91,19 @@ cranberry remd cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb \
   --output-dir remd-run
 ```
 
+Run the same periodic REMD example on one Slurm GPU with MPI ranks packed through CUDA MPS:
+
+```bash
+sbatch scripts/hpc/submit_remd_mpi_mps_one_gpu_example_slurm.sh
+```
+
+The script requests one GPU, starts CUDA MPS when available, and launches one MPI rank per REMD replica with `srun`. Override the defaults with environment variables:
+
+```bash
+OUTPUT_DIR=remd-mps-run STEPS=500000 N_REPLICAS=8 \
+sbatch scripts/hpc/submit_remd_mpi_mps_one_gpu_example_slurm.sh
+```
+
 Extract trajectories by thermodynamic temperature:
 
 ```bash

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>REMD MPI MPS One-GPU Example Report</title>
+</head>
+<body>
+  <h1>REMD MPI MPS One-GPU Example Report</h1>
+  <p>This report covers the small HPC example that shows how to run the README periodic REMD workflow with MPI ranks packed onto one Slurm GPU through CUDA MPS.</p>
+
+  <h2>Changes</h2>
+  <ul>
+    <li>Added <code>scripts/hpc/submit_remd_mpi_mps_one_gpu_example_slurm.sh</code>, a minimal Slurm batch script.</li>
+    <li>Added a short README pointer after the existing periodic REMD example.</li>
+    <li>Added focused script tests in <code>tests/test_hpc_scripts.py</code>.</li>
+    <li>Guarded the top-level compatibility <code>__init__.py</code> so pytest can collect tests when it imports that file as a standalone module.</li>
+  </ul>
+
+  <h2>Important Code Paths</h2>
+  <p>The example script keeps the workflow close to the public CLI example:</p>
+  <pre><code>srun -n "$N_REPLICAS" "$CRANBERRY_BIN" remd "$PDB_PATH" \
+    --extra-start-pdb "$EXTRA_START_PDB" \
+    --periodic \
+    --steps "$STEPS" \
+    --n-replicas "$N_REPLICAS" \
+    --platform CUDA \
+    --output-dir "$OUTPUT_DIR"</code></pre>
+
+  <p>The only runtime setup around the command is the one-GPU Slurm allocation and CUDA MPS lifecycle:</p>
+  <pre><code>#SBATCH --gres=gpu:1
+#SBATCH --ntasks=8
+
+export OPENMMTOOLS_ENABLE_MPI="${OPENMMTOOLS_ENABLE_MPI:-1}"
+export CUDA_MPS_PIPE_DIRECTORY="${CUDA_MPS_PIPE_DIRECTORY:-/tmp/cranberry-remd-mps-${USER:-user}-${SLURM_JOB_ID:-$$}}"
+export CUDA_MPS_LOG_DIRECTORY="${CUDA_MPS_LOG_DIRECTORY:-$OUTPUT_DIR/mps-log}"
+nvidia-cuda-mps-control -d</code></pre>
+
+  <h2>Validation</h2>
+  <ul>
+    <li><code>bash -n scripts/hpc/submit_remd_mpi_mps_one_gpu_example_slurm.sh</code>: passed.</li>
+    <li><code>conda run -n cranberry-dev python -m pytest -q tests/test_hpc_scripts.py</code>: passed, 3 tests.</li>
+    <li><code>conda run -n cranberry-dev python -m pytest -q tests/test_import.py</code>: passed, 1 test after the compatibility guard.</li>
+    <li><code>git diff --check</code>: passed.</li>
+  </ul>
+
+  <h2>Risks</h2>
+  <ul>
+    <li>The script is intentionally an example, not a production launcher. Cluster-specific account, partition, module, and environment setup remain user responsibility.</li>
+    <li>The example assumes Slurm exports a single allocated GPU to the job. Sites with unusual GPU binding policies may need local edits.</li>
+    <li>CUDA MPS requires NVIDIA tooling on the compute node; the script warns and continues if <code>nvidia-cuda-mps-control</code> is unavailable.</li>
+  </ul>
+</body>
+</html>
