@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from itertools import combinations, product
 from pathlib import Path
@@ -615,44 +616,54 @@ class CranberryForceField:
     def _add_pairing(self, system: mm.System, data: _TopologyData, n_exclude_pairing: int = 1, *, periodic: bool) -> None:
         geom_pairs = self._params["pairing_geompairs"]
         para = self._params["pairing_para"] * self._params["pairing_para0"]
-        expr = ""
+        rows_by_type_pair: dict[tuple[str, str], list[tuple[int, str, np.ndarray]]] = defaultdict(list)
         for i, pair in enumerate(geom_pairs):
-            d_type_id, a_type_id = RESTYPE_TO_INDEX[pair[0]], RESTYPE_TO_INDEX[pair[3]]
-            expr += f"Up{i}*fr{i}*g1_{i}*g2_{i}*g3_{i}*g4_{i}*h{i}*delta(d_type-{d_type_id})*delta(a_type-{a_type_id})*(1-is_excluded)+"
-        expr = expr.rstrip("+") + "; "
-        for i, pair in enumerate(geom_pairs):
-            expr += _pairing_component_expr(i, pair[2])
-        expr += (
-            "cos_normal_psi=select(sin(D2D1A1)*sin(D1A1A2), cos_normal_psi_full, cos_normal_psi_partial); "
-            "cos_normal_psi_full=sin(D2D1A1)*sin(D1A1A2)*cos(D2D1A1A2)-cos(D2D1A1)*cos(D1A1A2); "
-            "cos_normal_psi_partial=-cos(D2D1A1)*cos(D1A1A2); "
-            "D2D1A1=angle(d2, d1, a1); D1A1A2=angle(d1, a1, a2); D2D1A1A2=dihedral(d2, d1, a1, a2); "
-            "D3D1D2A1=select(sin(D1D2A1), dihedral(d3, d1, d2, a1), 0); "
-            "A3A1A2D1=select(sin(A1A2D1), dihedral(a3, a1, a2, d1), 0); "
-            "D1D2A1=angle(d1, d2, a1); A1A2D1=angle(a1, a2, d1); "
-            f"is_excluded=step({n_exclude_pairing}-abs(a_id-d_id))*delta(a_chainid-d_chainid);"
-        )
-        force = mm.CustomHbondForce(expr)
-        for parameter in ["a_type", "a_id", "a_chainid"]:
-            force.addPerAcceptorParameter(parameter)
-        for parameter in ["d_type", "d_id", "d_chainid"]:
-            force.addPerDonorParameter(parameter)
-        force.setCutoffDistance(0.8 * unit.nanometer)
-        force.setNonbondedMethod(force.CutoffPeriodic if periodic else force.CutoffNonPeriodic)
-        for i, row in enumerate(para):
+            rows_by_type_pair[(pair[0], pair[3])].append((i, pair[2], para[i]))
+
+        added_force = False
+        for type_pair_index, (d_type, a_type) in enumerate(rows_by_type_pair):
+            donor_residues = [entry for entry in data.virtual_site_summaries if entry[0][1] == d_type]
+            acceptor_residues = [entry for entry in data.virtual_site_summaries if entry[0][1] == a_type]
+            if not donor_residues or not acceptor_residues:
+                continue
+
+            parameter_prefix = f"pairing{type_pair_index}"
+            force = mm.CustomHbondForce(_typed_pairing_expr(rows_by_type_pair[(d_type, a_type)], parameter_prefix))
+            force.setCutoffDistance(0.8 * unit.nanometer)
+            force.setNonbondedMethod(force.CutoffPeriodic if periodic else force.CutoffNonPeriodic)
+
             names = ["Up", "r0_", "dr0_", "theta0_", "dtheta0_", "psi0_", "phi1_", "dphi1_", "phi2_", "dphi2_", "r_sens", "theta_sens", "phi_sens"]
-            for name, value in zip(names, row):
-                force.addGlobalParameter(f"{name}{i}", float(value))
-        for i, (cog, normal) in enumerate(data.virtual_site_summaries):
-            cog_idx, restype, resid, chainid, _, b1_idx = cog
-            normal_idx = normal[0]
-            values = [RESTYPE_TO_INDEX[restype], resid, chainid]
-            force.addDonor(cog_idx, normal_idx, b1_idx, values)
-            force.addAcceptor(cog_idx, normal_idx, b1_idx, values)
-            force.addExclusion(i, i)
-        force.setForceGroup(FORCE_GROUP_IDS["pairing"])
-        force.setName("pairing")
-        system.addForce(force)
+            for local_index, (_, _, row) in enumerate(rows_by_type_pair[(d_type, a_type)]):
+                for name, value in zip(names, row):
+                    force.addGlobalParameter(_pairing_parameter_name(name, local_index, parameter_prefix), float(value))
+
+            donor_metadata: list[tuple[int, int]] = []
+            acceptor_metadata: list[tuple[int, int]] = []
+            for cog, normal in donor_residues:
+                cog_idx, _, resid, chainid, _, b1_idx = cog
+                force.addDonor(cog_idx, normal[0], b1_idx, [])
+                donor_metadata.append((chainid, resid))
+            for cog, normal in acceptor_residues:
+                cog_idx, _, resid, chainid, _, b1_idx = cog
+                force.addAcceptor(cog_idx, normal[0], b1_idx, [])
+                acceptor_metadata.append((chainid, resid))
+            for donor_index, (donor_chainid, donor_resid) in enumerate(donor_metadata):
+                for acceptor_index, (acceptor_chainid, acceptor_resid) in enumerate(acceptor_metadata):
+                    if donor_chainid == acceptor_chainid and abs(acceptor_resid - donor_resid) <= n_exclude_pairing:
+                        force.addExclusion(donor_index, acceptor_index)
+
+            force.setForceGroup(FORCE_GROUP_IDS["pairing"])
+            force.setName("pairing")
+            system.addForce(force)
+            added_force = True
+
+        if not added_force:
+            force = mm.CustomHbondForce("0")
+            force.setCutoffDistance(0.8 * unit.nanometer)
+            force.setNonbondedMethod(force.CutoffPeriodic if periodic else force.CutoffNonPeriodic)
+            force.setForceGroup(FORCE_GROUP_IDS["pairing"])
+            force.setName("pairing")
+            system.addForce(force)
 
 
 def _dof_with_postfix(name: str) -> str:
@@ -782,14 +793,51 @@ def _as_quantity(value, target_unit):
     return value * target_unit
 
 
-def _pairing_component_expr(index: int, orientation: str) -> str:
+def _typed_pairing_expr(rows: list[tuple[int, str, np.ndarray]], parameter_prefix: str) -> str:
+    energy_terms = []
+    component_terms = []
+    for local_index, (_, orientation, _) in enumerate(rows):
+        up = _pairing_parameter_name("Up", local_index, parameter_prefix)
+        energy_terms.append(f"{up}*fr{local_index}*g1_{local_index}*g2_{local_index}*g3_{local_index}*g4_{local_index}*h{local_index}")
+        component_terms.append(_pairing_component_expr(local_index, orientation, parameter_prefix))
+    return (
+        "+".join(energy_terms)
+        + "; "
+        + "".join(component_terms)
+        + "cos_normal_psi=select(sin(D2D1A1)*sin(D1A1A2), cos_normal_psi_full, cos_normal_psi_partial); "
+        + "cos_normal_psi_full=sin(D2D1A1)*sin(D1A1A2)*cos(D2D1A1A2)-cos(D2D1A1)*cos(D1A1A2); "
+        + "cos_normal_psi_partial=-cos(D2D1A1)*cos(D1A1A2); "
+        + "r=distance(d1, a1); D2D1A1=angle(d2, d1, a1); D1A1A2=angle(d1, a1, a2); D2D1A1A2=dihedral(d2, d1, a1, a2); "
+        + "D3D1D2A1=select(sin(D1D2A1), dihedral(d3, d1, d2, a1), 0); "
+        + "A3A1A2D1=select(sin(A1A2D1), dihedral(a3, a1, a2, d1), 0); "
+        + "D1D2A1=angle(d1, d2, a1); A1A2D1=angle(a1, a2, d1); "
+    )
+
+
+def _pairing_parameter_name(name: str, index: int, parameter_prefix: str) -> str:
+    return f"{parameter_prefix}_{name}{index}" if parameter_prefix else f"{name}{index}"
+
+
+def _pairing_component_expr(index: int, orientation: str, parameter_prefix: str = "") -> str:
+    r_sens = _pairing_parameter_name("r_sens", index, parameter_prefix)
+    theta_sens = _pairing_parameter_name("theta_sens", index, parameter_prefix)
+    phi_sens = _pairing_parameter_name("phi_sens", index, parameter_prefix)
+    r0 = _pairing_parameter_name("r0_", index, parameter_prefix)
+    dr0 = _pairing_parameter_name("dr0_", index, parameter_prefix)
+    theta0 = _pairing_parameter_name("theta0_", index, parameter_prefix)
+    dtheta0 = _pairing_parameter_name("dtheta0_", index, parameter_prefix)
+    phi1 = _pairing_parameter_name("phi1_", index, parameter_prefix)
+    dphi1 = _pairing_parameter_name("dphi1_", index, parameter_prefix)
+    phi2 = _pairing_parameter_name("phi2_", index, parameter_prefix)
+    dphi2 = _pairing_parameter_name("dphi2_", index, parameter_prefix)
+    psi0 = _pairing_parameter_name("psi0_", index, parameter_prefix)
     expr = (
-        f"fr{index}=1/2*(tanh(r_sens{index}*(abs(distance(d1, a1)-r0_{index})-dr0_{index}))-1); "
-        f"g1_{index}=1/2*(tanh(theta_sens{index}*(cos(abs(D2D1A1-theta0_{index}))-cos(dtheta0_{index})))+1); "
-        f"g2_{index}=1/2*(tanh(theta_sens{index}*(cos(abs(D1A1A2-theta0_{index}))-cos(dtheta0_{index})))+1); "
-        f"g3_{index}=1/2*(tanh(phi_sens{index}*(cos(abs(D3D1D2A1-phi1_{index}))-cos(dphi1_{index})))+1); "
-        f"g4_{index}=1/2*(tanh(phi_sens{index}*(cos(abs(A3A1A2D1-phi2_{index}))-cos(dphi2_{index})))+1); "
+        f"fr{index}=1/2*(tanh({r_sens}*(abs(r-{r0})-{dr0}))-1); "
+        f"g1_{index}=1/2*(tanh({theta_sens}*(cos(D2D1A1-{theta0})-cos({dtheta0})))+1); "
+        f"g2_{index}=1/2*(tanh({theta_sens}*(cos(D1A1A2-{theta0})-cos({dtheta0})))+1); "
+        f"g3_{index}=1/2*(tanh({phi_sens}*(cos(D3D1D2A1-{phi1})-cos({dphi1})))+1); "
+        f"g4_{index}=1/2*(tanh({phi_sens}*(cos(A3A1A2D1-{phi2})-cos({dphi2})))+1); "
     )
     if orientation == "+":
-        return expr + f"h{index}=1/2*(tanh(theta_sens{index}*(cos_normal_psi-cos(psi0_{index})))+1); "
-    return expr + f"h{index}=1/2*(tanh(theta_sens{index}*(-cos_normal_psi-cos(psi0_{index})))+1); "
+        return expr + f"h{index}=1/2*(tanh({theta_sens}*(cos_normal_psi-cos({psi0})))+1); "
+    return expr + f"h{index}=1/2*(tanh({theta_sens}*(-cos_normal_psi-cos({psi0})))+1); "

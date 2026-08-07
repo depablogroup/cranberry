@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Pairing Force Optimization Report</title>
+  <style>
+    body { font-family: system-ui, sans-serif; line-height: 1.5; max-width: 980px; margin: 2rem auto; padding: 0 1rem; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    pre { background: #f6f8fa; padding: 1rem; overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #d0d7de; padding: 0.4rem 0.6rem; text-align: left; }
+    th { background: #f6f8fa; }
+  </style>
+</head>
+<body>
+  <h1>Pairing Force Optimization Report</h1>
+  <p><strong>Date:</strong> 2026-08-06</p>
+  <p><strong>Branch:</strong> <code>optimize-bp</code></p>
+
+  <h2>Summary</h2>
+  <p>
+    The base-pairing force was the dominant CUDA bottleneck in the local <code>1l2x</code>
+    ablation benchmark. The original implementation used one large <code>CustomHbondForce</code>
+    containing all 25 geometric pairing terms gated by donor and acceptor base-type
+    <code>delta(...)</code> factors. This means every candidate donor/acceptor pair carried the
+    full expression even when most terms were inactive for that base-type pair.
+  </p>
+  <p>
+    The optimized construction groups the 25 geometry rows into 9 donor/acceptor base-type
+    forces. Each force includes only compatible residues and only the geometry rows for that
+    type pair. All split forces retain name <code>pairing</code> and force group 14, so energy
+    decomposition and detailed reporting still see one public pairing component. A second pass
+    moved same-chain near-residue pairing exclusions from the CUDA expression into explicit
+    <code>CustomHbondForce.addExclusion()</code> entries, removing runtime <code>step</code>, <code>abs</code>,
+    and chain-id <code>delta</code> gates from every candidate interaction.
+  </p>
+
+  <h2>Core Code Path</h2>
+  <pre><code>rows_by_type_pair: dict[tuple[str, str], list[tuple[int, str, np.ndarray]]] = defaultdict(list)
+for i, pair in enumerate(geom_pairs):
+    rows_by_type_pair[(pair[0], pair[3])].append((i, pair[2], para[i]))
+
+for type_pair_index, (d_type, a_type) in enumerate(rows_by_type_pair):
+    donor_residues = [entry for entry in data.virtual_site_summaries if entry[0][1] == d_type]
+    acceptor_residues = [entry for entry in data.virtual_site_summaries if entry[0][1] == a_type]
+    if not donor_residues or not acceptor_residues:
+        continue
+
+    parameter_prefix = f"pairing{type_pair_index}"
+    force = mm.CustomHbondForce(
+        _typed_pairing_expr(rows_by_type_pair[(d_type, a_type)], parameter_prefix)
+    )</code></pre>
+  <p>
+    The helper namespaces global parameters per split force because OpenMM requires same-named
+    global parameters across forces to have identical default values. Donor/acceptor metadata is
+    used at construction time only to add same-chain exclusions; the force expression no longer
+    carries residue-id or chain-id per-particle parameters.
+  </p>
+
+  <h2>Validation</h2>
+  <pre><code>conda run -n cranberry-dev python -m pytest -q tests/test_energy.py
+.....                                                                    [100%]
+5 passed in 6.12s
+
+conda run -n cranberry-dev python -m pytest -q tests/test_energy.py tests/test_md.py
+........................                                                 [100%]
+24 passed in 29.80s</code></pre>
+  <p>
+    The CPU energy regression covers <code>2ntCG</code>, <code>157d</code>, <code>1l2x</code>, and
+    <code>1zih</code>. The MD tests cover force periodicity, reporting, and related runtime paths.
+  </p>
+
+  <h2>Local CUDA Benchmark</h2>
+  <p>
+    Fixture: bundled <code>1l2x_cg_vs_conect.pdb</code>, 216 atoms, RTX 2060, OpenMM CUDA,
+    5 fs timestep, 1k warmup steps, 5k timed steps, 2 repeats for matrix checks, plus 5 repeats for the final all-force value. Raw scratch output:
+    <code>/tmp/cranberry_1l2x_cuda_force_ablations.json</code>.
+  </p>
+  <table>
+    <thead>
+      <tr><th>Case</th><th>Before</th><th>After</th><th>Change</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>All forces</td><td>3.727 s, 580 ns/day</td><td>2.161 s, 1000 ns/day</td><td>1.72x faster</td></tr>
+      <tr><td>Split-only checkpoint</td><td>3.727 s, 580 ns/day</td><td>2.220 s, 973 ns/day</td><td>1.68x faster</td></tr>
+      <tr><td>No pairing</td><td>1.522 s, 1419 ns/day</td><td>1.555 s, 1389 ns/day</td><td>unchanged within noise</td></tr>
+      <tr><td>No stacking33/35/55</td><td>2.975 s, 726 ns/day</td><td>1.762 s, 1228 ns/day</td><td>pairing remains improved</td></tr>
+      <tr><td>No spline</td><td>2.623 s, 823 ns/day</td><td>1.102 s, 1962 ns/day</td><td>pairing plus no spline</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Risks And Follow-Up</h2>
+  <ul>
+    <li>The system now contains multiple OpenMM forces named <code>pairing</code>; they intentionally share force group 14.</li>
+    <li>A one-force-per-geometry experiment passed energy regression but was slower on CUDA: about <code>2.805 s</code> per 5k all-force steps, so it was discarded.</li>
+    <li>The CUDA benchmark is short and intended for local directionality, not a publication snapshot.</li>
+    <li>Pairing still costs roughly 0.61 s per 5k steps on <code>1l2x</code>; further work may need lower-level expression changes or OpenMM plugin work.</li>
+  </ul>
+</body>
+</html>
