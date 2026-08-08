@@ -76,6 +76,9 @@ def test_create_system_adds_named_forces():
     system = CranberryForceField().createSystem(pdb.topology, positions=pdb.positions)
     names = {system.getForce(index).getName() for index in range(system.getNumForces())}
     assert {"bond", "angle", "dihedral", "pucker", "stacking35", "stacking55", "stacking33", "pairing", "wca", "spline", "electrostatic"} <= names
+    spline = next(force for force in (system.getForce(i) for i in range(system.getNumForces())) if force.getName() == "spline")
+    assert spline.getNumTabulatedFunctions() == 3
+    assert {spline.getTabulatedFunctionName(i) for i in range(3)} == {"U", "rmin", "rmax"}
 
 
 @pytest.mark.parametrize("filename,expected", EXPECTED_ENERGIES.items())

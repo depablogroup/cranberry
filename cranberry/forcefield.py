@@ -392,19 +392,28 @@ class CranberryForceField:
     def _add_spline(self, system: mm.System, data: _TopologyData, base_idx_lim: int, *, periodic: bool) -> None:
         y_nodes = self._params["spline_y_nodes"]
         x_lim = self._params["spline_x_lim"]
-        n_types = y_nodes.shape[0]
-        expr = "0"
-        active_pairs: list[tuple[int, int]] = []
-        for i, j in product(range(n_types), range(n_types)):
-            if i < base_idx_lim or j < base_idx_lim:
-                expr += f"+delta(type1-{i})*delta(type2-{j})*U{i}{j}(r)"
-                active_pairs.append((i, j))
+        y_nodes, x_lim = _legacy_compatible_spline_tables(y_nodes, x_lim, base_idx_lim)
+        n_types_x, n_types_y, n_nodes = y_nodes.shape
+        expr = (
+            "active*U(type1,type2,node);"
+            f"active=step({base_idx_lim - 0.5}-min(type1,type2));"
+            f"node=(r-rmin(type1,type2))*{n_nodes - 1}/(rmax(type1,type2)-rmin(type1,type2))"
+        )
         force = mm.CustomNonbondedForce(expr)
-        for i, j in active_pairs:
-            force.addTabulatedFunction(
-                f"U{i}{j}",
-                mm.Continuous1DFunction(y_nodes[i, j], float(x_lim[i, j, 0]), float(x_lim[i, j, 1])),
-            )
+        force.addTabulatedFunction(
+            "U",
+            mm.Continuous3DFunction(
+                n_types_x, n_types_y, n_nodes,
+                y_nodes.transpose(2, 1, 0).ravel(),
+                0, n_types_x - 1, 0, n_types_y - 1, 0, n_nodes - 1,
+            ),
+        )
+        force.addTabulatedFunction(
+            "rmin", mm.Discrete2DFunction(n_types_x, n_types_y, x_lim[:, :, 0].T.ravel())
+        )
+        force.addTabulatedFunction(
+            "rmax", mm.Discrete2DFunction(n_types_x, n_types_y, x_lim[:, :, 1].T.ravel())
+        )
         force.addPerParticleParameter("type")
         for name in data.atom_names:
             force.addParticle([HIGH_RES_SPLINE_TYPES[name]])
@@ -701,6 +710,29 @@ def _angle_descriptor_index(angle: str, dof_to_index: dict[str, int]) -> int | N
         return dof_to_index[angle]
     reversed_angle = "-".join(angle.split("-")[::-1])
     return dof_to_index.get(reversed_angle)
+
+
+def _legacy_compatible_spline_tables(
+    y_nodes: np.ndarray, x_lim: np.ndarray, base_idx_lim: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Pack spline tables while preserving legacy duplicate-name resolution."""
+
+    effective_y = np.array(y_nodes, copy=True)
+    effective_x = np.array(x_lim, copy=True)
+    active_pairs = [
+        (i, j)
+        for i, j in product(range(y_nodes.shape[0]), range(y_nodes.shape[1]))
+        if i < base_idx_lim or j < base_idx_lim
+    ]
+
+    # Legacy names omitted a separator: U110 means both (1, 10) and (11, 0).
+    # OpenMM resolved references to the last table registered under each name.
+    source_by_name = {f"U{i}{j}": (i, j) for i, j in active_pairs}
+    for i, j in active_pairs:
+        source_i, source_j = source_by_name[f"U{i}{j}"]
+        effective_y[i, j] = y_nodes[source_i, source_j]
+        effective_x[i, j] = x_lim[source_i, source_j]
+    return effective_y, effective_x
 
 
 def _load_parameters(path: Path) -> dict[str, object]:
