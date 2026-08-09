@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Spline Force Optimization Report</title>
+  <style>
+    body { max-width: 980px; margin: 2rem auto; padding: 0 1rem; font: 16px/1.5 system-ui, sans-serif; color: #202124; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    pre { overflow-x: auto; padding: 1rem; background: #f5f6f7; border: 1px solid #d9dcdf; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #c8ccd0; padding: .5rem; text-align: left; }
+    th { background: #f1f3f4; }
+  </style>
+</head>
+<body>
+  <h1>Spline Force Optimization</h1>
+  <p>
+    This change removes the dominant CUDA overhead in the CRANBERRY high-resolution
+    spline force without changing the regression model. The original
+    <code>CustomNonbondedForce</code> dispatched across 63 ordered
+    <code>Continuous1DFunction</code> objects for every candidate pair. The replacement
+    evaluates one packed <code>Continuous3DFunction</code> and two discrete distance-range
+    lookups.
+  </p>
+
+  <h2>Implementation</h2>
+  <pre><code>expr = (
+    "active*U(type1,type2,node);"
+    f"active=step({base_idx_lim - 0.5}-min(type1,type2));"
+    f"node=(r-rmin(type1,type2))*{n_nodes - 1}/"
+    "(rmax(type1,type2)-rmin(type1,type2))"
+)
+force.addTabulatedFunction(
+    "U",
+    mm.Continuous3DFunction(
+        n_types_x, n_types_y, n_nodes,
+        y_nodes.transpose(2, 1, 0).ravel(),
+        0, n_types_x - 1, 0, n_types_y - 1, 0, n_nodes - 1,
+    ),
+)</code></pre>
+  <p>
+    Particle types are integer coordinates in the first two table dimensions. The third
+    coordinate maps each pair-specific distance interval to its original 11 spline nodes.
+    OpenMM uses natural cubic interpolation for both the old 1D functions and the new 3D
+    function, so values at integer type coordinates reproduce the original 1D slices.
+  </p>
+
+  <h2>Legacy Compatibility</h2>
+  <p>
+    The legacy function names concatenated two type indices without a separator.
+    <code>U110</code> therefore named both <code>(1, 10)</code> and <code>(11, 0)</code>.
+    OpenMM resolved the former through the later <code>(11, 0)</code> registration. A
+    per-type diagnostic localized the entire naive packed-table energy difference to this
+    one collision: 4.3640858129 kJ/mol on <code>1l2x</code>. The helper
+    <code>_legacy_compatible_spline_tables()</code> reproduces duplicate-name resolution
+    explicitly before packing, rather than relying on duplicate OpenMM function names.
+  </p>
+  <pre><code>source_by_name = {f"U{i}{j}": (i, j) for i, j in active_pairs}
+for i, j in active_pairs:
+    source_i, source_j = source_by_name[f"U{i}{j}"]
+    effective_y[i, j] = y_nodes[source_i, source_j]
+    effective_x[i, j] = x_lim[source_i, source_j]</code></pre>
+
+  <h2>Energy Regression</h2>
+  <table>
+    <thead><tr><th>Fixture</th><th>Packed spline error</th></tr></thead>
+    <tbody>
+      <tr><td>2ntCG</td><td>0.0 kJ/mol</td></tr>
+      <tr><td>157d</td><td>+5.7e-14 kJ/mol</td></tr>
+      <tr><td>1l2x</td><td>0.0 kJ/mol</td></tr>
+      <tr><td>1zih</td><td>-1.4e-14 kJ/mol</td></tr>
+    </tbody>
+  </table>
+  <pre><code>conda run -n cranberry-dev python -m pytest -q tests/test_energy.py
+5 passed in 6.03s
+
+conda run -n cranberry-dev python -m pytest -q tests/test_energy.py tests/test_md.py
+24 passed in 28.00s</code></pre>
+
+  <pre><code>conda run -n cranberry-dev python -m pytest -q
+77 passed, 1 warning in 92.58s</code></pre>
+
+  <h2>CUDA Benchmark</h2>
+  <p>
+    Hardware: local NVIDIA RTX 2060. Input: bundled <code>1l2x_cg_vs_conect.pdb</code>.
+    Each repeat used 1,000 warmup steps and 5,000 timed steps with a 5 fs timestep.
+  </p>
+  <table>
+    <thead><tr><th>Configuration</th><th>Before</th><th>After</th><th>Change</th></tr></thead>
+    <tbody>
+      <tr><td>All forces</td><td>2.147 s</td><td>1.251 +/- 0.031 s</td><td>1.72x faster</td></tr>
+      <tr><td>No spline</td><td>1.040 s</td><td>1.066 +/- 0.036 s</td><td>noise-level change</td></tr>
+      <tr><td>Marginal spline cost</td><td>about 1.107 s</td><td>about 0.185 s</td><td>about 83% lower</td></tr>
+    </tbody>
+  </table>
+  <p>
+    The post-change full model reaches about 1,727 ns/day at 5 fs in the five-repeat
+    sample. Force-ablation costs are not additive, but spline is no longer the dominant
+    term; pairing again produces the largest removal speedup.
+  </p>
+
+  <h2>Risk Notes</h2>
+  <p>
+    The implementation retains one <code>CustomNonbondedForce</code>, the existing
+    interaction group, three-bond exclusions, 2 nm cutoff, periodic switch, force name,
+    and force group. The packed table assumes integer particle type parameters and uniform
+    node spacing, both of which are properties of the packaged canonical model. The
+    existing four-fixture energy regression remains the authoritative scientific gate.
+  </p>
+</body>
+</html>
