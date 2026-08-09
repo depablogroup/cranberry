@@ -1,5 +1,9 @@
+import numpy as np
 import pytest
+import openmm as mm
+from openmm import unit
 
+import cranberry.forcefield as forcefield_module
 from cranberry.data import data_path
 from cranberry.energy import compute_energy
 from cranberry.energy_decomposition import present_force_group_names
@@ -98,7 +102,27 @@ def test_create_system_adds_named_forces():
     assert global_parameters == set(STACKING_SCALE_PARAMETERS.values())
 
 
-def test_pairing_is_packed_by_donor_type():
+def test_pairing_uses_parallel_compound_pairs_for_small_systems():
+    pdb = app.PDBFile(str(data_path("examples/1l2x_cg_vs_conect.pdb")))
+    system = CranberryForceField().createSystem(
+        pdb.topology, positions=pdb.positions, enabled_forces=["pairing"]
+    )
+    pairing_forces = [
+        system.getForce(index)
+        for index in range(system.getNumForces())
+        if system.getForce(index).getName() == "pairing"
+    ]
+
+    assert len(pairing_forces) == 1
+    pairing = pairing_forces[0]
+    assert isinstance(pairing, mm.CustomCompoundBondForce)
+    assert pairing.getNumParticlesPerBond() == 6
+    assert pairing.getNumBonds() == 336
+    assert pairing.getNumPerBondParameters() == 6 * 14
+
+
+def test_large_pairing_systems_retain_neighbor_list_fallback(monkeypatch):
+    monkeypatch.setattr(forcefield_module, "_PAIRING_COMPOUND_MAX_BONDS", 0)
     pdb = app.PDBFile(str(data_path("examples/1l2x_cg_vs_conect.pdb")))
     system = CranberryForceField().createSystem(
         pdb.topology, positions=pdb.positions, enabled_forces=["pairing"]
@@ -110,9 +134,80 @@ def test_pairing_is_packed_by_donor_type():
     ]
 
     assert len(pairing_forces) == 4
-    assert all(force.getNumPerAcceptorParameters() >= 14 for force in pairing_forces)
-    assert all(force.getNumPerAcceptorParameters() % 14 == 0 for force in pairing_forces)
-    assert all(force.getNumTabulatedFunctions() == 0 for force in pairing_forces)
+    assert all(isinstance(force, mm.CustomHbondForce) for force in pairing_forces)
+    assert all(
+        force.getNumPerAcceptorParameters() >= 14
+        for force in pairing_forces
+    )
+
+
+def test_single_one_slot_pairing_channel_uses_hbond_path():
+    pdb = app.PDBFile(str(data_path("examples/rU40_cg_vs_conect.pdb")))
+    system = CranberryForceField().createSystem(
+        pdb.topology, positions=pdb.positions, enabled_forces=["pairing"]
+    )
+    pairing_forces = [
+        force for force in system.getForces() if force.getName() == "pairing"
+    ]
+
+    assert len(pairing_forces) == 1
+    assert isinstance(pairing_forces[0], mm.CustomHbondForce)
+
+
+@pytest.mark.parametrize("periodic", [False, True])
+def test_compound_pairing_matches_fallback_energy_and_forces(
+    monkeypatch, periodic
+):
+    pdb = app.PDBFile(str(data_path("examples/1l2x_cg_vs_conect.pdb")))
+    compound = CranberryForceField().createSystem(
+        pdb.topology,
+        positions=pdb.positions,
+        enabled_forces=["pairing"],
+        periodic=periodic,
+    )
+    monkeypatch.setattr(forcefield_module, "_PAIRING_COMPOUND_MAX_BONDS", 0)
+    fallback = CranberryForceField().createSystem(
+        pdb.topology,
+        positions=pdb.positions,
+        enabled_forces=["pairing"],
+        periodic=periodic,
+    )
+    coordinates = np.asarray(
+        pdb.positions.value_in_unit(unit.nanometer)
+    )
+    positions = (
+        coordinates
+        + np.random.default_rng(20260809).normal(
+            0.0, 0.002, coordinates.shape
+        )
+    ) * unit.nanometer
+
+    results = []
+    for system in (compound, fallback):
+        context = mm.Context(
+            system,
+            mm.VerletIntegrator(1 * unit.femtosecond),
+            mm.Platform.getPlatformByName("CPU"),
+        )
+        context.setPositions(positions)
+        context.computeVirtualSites()
+        state = context.getState(getEnergy=True, getForces=True)
+        results.append(
+            (
+                state.getPotentialEnergy().value_in_unit(
+                    unit.kilojoule_per_mole
+                ),
+                state.getForces(asNumpy=True).value_in_unit(
+                    unit.kilojoule_per_mole / unit.nanometer
+                ),
+            )
+        )
+        del context
+
+    assert results[0][0] == pytest.approx(results[1][0], abs=1e-10)
+    np.testing.assert_allclose(
+        results[0][1], results[1][1], rtol=0.0, atol=1e-10
+    )
 
 
 def test_fused_stacking_preserves_enabled_component_selection():

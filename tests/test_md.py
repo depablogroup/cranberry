@@ -39,9 +39,16 @@ def test_create_system_periodic_switches_legacy_pbc_forces():
         assert _force_by_name(nonperiodic, name).getNonbondedMethod() == _force_by_name(nonperiodic, name).CutoffNonPeriodic
         assert _force_by_name(periodic, name).getNonbondedMethod() == _force_by_name(periodic, name).CutoffPeriodic
 
-    for name in ["stacking", "pairing"]:
+    for name in ["stacking"]:
         assert _force_by_name(nonperiodic, name).getNonbondedMethod() == _force_by_name(nonperiodic, name).CutoffNonPeriodic
         assert _force_by_name(periodic, name).getNonbondedMethod() == _force_by_name(periodic, name).CutoffPeriodic
+
+    assert not _force_by_name(
+        nonperiodic, "pairing"
+    ).usesPeriodicBoundaryConditions()
+    assert _force_by_name(
+        periodic, "pairing"
+    ).usesPeriodicBoundaryConditions()
 
     assert all(not force.usesPeriodicBoundaryConditions() for force in _forces_by_name(nonperiodic, "pucker"))
     assert all(force.usesPeriodicBoundaryConditions() for force in _forces_by_name(periodic, "pucker"))
@@ -78,6 +85,24 @@ def test_periodic_box_cutoff_validation_rejects_too_small_box():
         box_padding=2 * unit.nanometer,
     )
     with pytest.raises(ValueError, match="Periodic box is too small.*electrostatic.*box-padding"):
+        validate_periodic_box_cutoffs(system)
+
+
+def test_periodic_box_validation_includes_compound_pairing_cutoff():
+    pdb = app.PDBFile(str(data_path("examples/1l2x_cg_vs_conect.pdb")))
+    system = CranberryForceField().createSystem(
+        pdb.topology,
+        positions=pdb.positions,
+        periodic=True,
+        enabled_forces=["pairing"],
+    )
+    system.setDefaultPeriodicBoxVectors(
+        (1, 0, 0) * unit.nanometer,
+        (0, 1, 0) * unit.nanometer,
+        (0, 0, 1) * unit.nanometer,
+    )
+
+    with pytest.raises(ValueError, match="pairing.*0.8 nm"):
         validate_periodic_box_cutoffs(system)
 
 

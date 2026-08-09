@@ -49,6 +49,10 @@ FUSED_STACKING_FORCE_NAME = "stacking"
 STACKING_SCALE_PARAMETERS = {
     name: f"{name}_scale" for name in STACKING_COMPONENT_NAMES
 }
+_PAIRING_CUTOFF_NM = 0.8
+# createSystem() does not know the eventual OpenMM platform, so this is a
+# conservative, platform-independent bound on explicit pair storage.
+_PAIRING_COMPOUND_MAX_BONDS = 8192
 BASE_TYPE_TO_CG_NAMES = {
     "A": ("R1", "A1", "A2"),
     "U": ("Y1", "U1", "Y2"),
@@ -203,13 +207,20 @@ def validate_periodic_box_cutoffs(system: mm.System) -> None:
         force = system.getForce(index)
         get_cutoff = getattr(force, "getCutoffDistance", None)
         get_method = getattr(force, "getNonbondedMethod", None)
-        if get_cutoff is None or get_method is None:
+        cutoff_nm = None
+        if get_cutoff is not None and get_method is not None:
+            method = get_method()
+            periodic_method = getattr(force, "CutoffPeriodic", None)
+            if periodic_method is not None and method == periodic_method:
+                cutoff_nm = get_cutoff().value_in_unit(unit.nanometer)
+        elif (
+            isinstance(force, mm.CustomCompoundBondForce)
+            and force.getName() == "pairing"
+            and force.usesPeriodicBoundaryConditions()
+        ):
+            cutoff_nm = _PAIRING_CUTOFF_NM
+        if cutoff_nm is None:
             continue
-        method = get_method()
-        periodic_method = getattr(force, "CutoffPeriodic", None)
-        if periodic_method is None or method != periodic_method:
-            continue
-        cutoff_nm = get_cutoff().value_in_unit(unit.nanometer)
         if cutoff_nm > half_min_box_nm:
             name = force.getName() or type(force).__name__
             raise ValueError(
@@ -673,6 +684,119 @@ class CranberryForceField:
         for i, pair in enumerate(geom_pairs):
             rows_by_donor[pair[0]][pair[3]].append((i, pair[2], para[i]))
 
+        # Choose the representation once while constructing the System. The
+        # compound path exposes candidate pairs as parallel work, while the
+        # H-bond path supplies a scalable neighbor list. Enumeration stops at
+        # limit+1, and a one-channel/one-slot case stays on H-bond because it
+        # has no launch-fusion benefit. This choice never changes during MD.
+        compound_bonds = _pairing_compound_bonds(
+            data,
+            rows_by_donor,
+            n_exclude_pairing,
+            max_bonds=_PAIRING_COMPOUND_MAX_BONDS,
+        )
+        active_type_pairs = {
+            type_pair for _, type_pair in compound_bonds
+        }
+        active_donor_types = {
+            donor_type for donor_type, _ in active_type_pairs
+        }
+        max_active_slots = max(
+            (
+                len(rows_by_donor[donor_type][acceptor_type])
+                for donor_type, acceptor_type in active_type_pairs
+            ),
+            default=0,
+        )
+        use_compound = (
+            len(compound_bonds) <= _PAIRING_COMPOUND_MAX_BONDS
+            and (
+                len(active_donor_types) > 1
+                or max_active_slots > 1
+            )
+        )
+        if use_compound:
+            self._add_compound_pairing(
+                system, rows_by_donor, compound_bonds, periodic=periodic
+            )
+            return
+
+        self._add_hbond_pairing(
+            system,
+            data,
+            rows_by_donor,
+            n_exclude_pairing,
+            periodic=periodic,
+        )
+
+    def _add_compound_pairing(
+        self,
+        system: mm.System,
+        rows_by_donor,
+        compound_bonds,
+        *,
+        periodic: bool,
+    ) -> None:
+        active_type_pairs = {
+            type_pair for _, type_pair in compound_bonds
+        }
+        slot_count = max(
+            len(rows_by_donor[donor_type][acceptor_type])
+            for donor_type, acceptor_type in active_type_pairs
+        )
+        parameter_prefix = "pairing_compound"
+        force = mm.CustomCompoundBondForce(
+            6,
+            _donor_packed_pairing_expr(
+                slot_count,
+                parameter_prefix,
+                particle_names=("p1", "p2", "p3", "p4", "p5", "p6"),
+                cutoff_nm=_PAIRING_CUTOFF_NM,
+            ),
+        )
+        parameter_names = (*_PACKED_PAIRING_PARAMETER_NAMES, "psi_sign")
+        for slot in range(slot_count):
+            for name in parameter_names:
+                force.addPerBondParameter(
+                    _pairing_parameter_name(name, slot, parameter_prefix)
+                )
+
+        zero_parameters = _packed_pairing_parameters(np.zeros(13))
+        values_by_pair = {}
+        for donor_type, rows_by_acceptor in rows_by_donor.items():
+            for acceptor_type, raw_rows in rows_by_acceptor.items():
+                if (donor_type, acceptor_type) not in active_type_pairs:
+                    continue
+                rows = [
+                    (orientation, _packed_pairing_parameters(row))
+                    for _, orientation, row in raw_rows
+                ]
+                values_by_pair[(donor_type, acceptor_type)] = [
+                    float(
+                        _pairing_slot_parameter(
+                            rows, slot, name, zero_parameters
+                        )
+                    )
+                    for slot in range(slot_count)
+                    for name in parameter_names
+                ]
+
+        for particle_indices, type_pair in compound_bonds:
+            force.addBond(particle_indices, values_by_pair[type_pair])
+        force.setUsesPeriodicBoundaryConditions(periodic)
+        force.setForceGroup(FORCE_GROUP_IDS["pairing"])
+        force.setName("pairing")
+        system.addForce(force)
+
+    def _add_hbond_pairing(
+        self,
+        system: mm.System,
+        data: _TopologyData,
+        rows_by_donor,
+        n_exclude_pairing: int,
+        *,
+        periodic: bool,
+    ) -> None:
         added_force = False
         for donor_type_index, (d_type, rows_by_acceptor) in enumerate(rows_by_donor.items()):
             donor_residues = [entry for entry in data.virtual_site_summaries if entry[0][1] == d_type]
@@ -688,7 +812,7 @@ class CranberryForceField:
             force = mm.CustomHbondForce(
                 _donor_packed_pairing_expr(slot_count, parameter_prefix)
             )
-            force.setCutoffDistance(0.8 * unit.nanometer)
+            force.setCutoffDistance(_PAIRING_CUTOFF_NM * unit.nanometer)
             force.setNonbondedMethod(force.CutoffPeriodic if periodic else force.CutoffNonPeriodic)
 
             packed_rows = {
@@ -717,13 +841,9 @@ class CranberryForceField:
                 acceptor_parameters = []
                 for slot in range(slot_count):
                     for name in (*_PACKED_PAIRING_PARAMETER_NAMES, "psi_sign"):
-                        if slot < len(rows):
-                            orientation, parameters = rows[slot]
-                            value = (
-                                1.0 if orientation == "+" else -1.0
-                            ) if name == "psi_sign" else parameters[name]
-                        else:
-                            value = 1.0 if name == "psi_sign" else zero_parameters[name]
+                        value = _pairing_slot_parameter(
+                            rows, slot, name, zero_parameters
+                        )
                         acceptor_parameters.append(float(value))
                 force.addAcceptor(
                     cog_idx, normal[0], b1_idx, acceptor_parameters
@@ -741,7 +861,7 @@ class CranberryForceField:
 
         if not added_force:
             force = mm.CustomHbondForce("0")
-            force.setCutoffDistance(0.8 * unit.nanometer)
+            force.setCutoffDistance(_PAIRING_CUTOFF_NM * unit.nanometer)
             force.setNonbondedMethod(force.CutoffPeriodic if periodic else force.CutoffNonPeriodic)
             force.setForceGroup(FORCE_GROUP_IDS["pairing"])
             force.setName("pairing")
@@ -956,7 +1076,66 @@ def _packed_pairing_parameters(row: np.ndarray) -> dict[str, float]:
     }
 
 
-def _donor_packed_pairing_expr(slot_count: int, parameter_prefix: str) -> str:
+def _pairing_slot_parameter(rows, slot, name, zero_parameters):
+    if slot >= len(rows):
+        return 1.0 if name == "psi_sign" else zero_parameters[name]
+    orientation, parameters = rows[slot]
+    if name == "psi_sign":
+        return 1.0 if orientation == "+" else -1.0
+    return parameters[name]
+
+
+def _pairing_compound_bonds(
+    data, rows_by_donor, n_exclude_pairing, *, max_bonds
+):
+    residues_by_type = {
+        restype: [
+            entry
+            for entry in data.virtual_site_summaries
+            if entry[0][1] == restype
+        ]
+        for restype in RESTYPE_TO_INDEX
+    }
+    bonds = []
+    for donor_type, rows_by_acceptor in rows_by_donor.items():
+        for acceptor_type in rows_by_acceptor:
+            for donor_cog, donor_normal in residues_by_type[donor_type]:
+                d_cog, _, d_residue, d_chain, _, d_b1 = donor_cog
+                for acceptor_cog, acceptor_normal in residues_by_type[
+                    acceptor_type
+                ]:
+                    a_cog, _, a_residue, a_chain, _, a_b1 = acceptor_cog
+                    if (
+                        d_chain == a_chain
+                        and abs(a_residue - d_residue)
+                        <= n_exclude_pairing
+                    ):
+                        continue
+                    bonds.append(
+                        (
+                            (
+                                d_cog,
+                                donor_normal[0],
+                                d_b1,
+                                a_cog,
+                                acceptor_normal[0],
+                                a_b1,
+                            ),
+                            (donor_type, acceptor_type),
+                        )
+                    )
+                    if len(bonds) > max_bonds:
+                        return bonds
+    return bonds
+
+
+def _donor_packed_pairing_expr(
+    slot_count: int,
+    parameter_prefix: str,
+    *,
+    particle_names=("d1", "d2", "d3", "a1", "a2", "a3"),
+    cutoff_nm: float | None = None,
+) -> str:
     energy_terms = []
     component_terms = []
 
@@ -986,8 +1165,12 @@ def _donor_packed_pairing_expr(slot_count: int, parameter_prefix: str) -> str:
             f"({parameter('psi_sign')}*cos_normal_psi-"
             f"cos({parameter('psi0')})))+1); "
         )
+    energy = "+".join(energy_terms)
+    if cutoff_nm is not None:
+        energy = f"step({cutoff_nm}-r)*({energy})"
+    d1, d2, d3, a1, a2, a3 = particle_names
     return (
-        "+".join(energy_terms)
+        energy
         + "; "
         + "".join(component_terms)
         + "cos_normal_psi=select(sin(D2D1A1)*sin(D1A1A2), "
@@ -995,14 +1178,16 @@ def _donor_packed_pairing_expr(slot_count: int, parameter_prefix: str) -> str:
         + "cos_normal_psi_full=sin(D2D1A1)*sin(D1A1A2)*"
         + "cos(D2D1A1A2)-cos(D2D1A1)*cos(D1A1A2); "
         + "cos_normal_psi_partial=-cos(D2D1A1)*cos(D1A1A2); "
-        + "r=distance(d1,a1); "
-        + "D2D1A1=angle(d2,d1,a1); D1A1A2=angle(d1,a1,a2); "
-        + "D2D1A1A2=dihedral(d2,d1,a1,a2); "
+        + f"r=distance({d1},{a1}); "
+        + f"D2D1A1=angle({d2},{d1},{a1}); "
+        + f"D1A1A2=angle({d1},{a1},{a2}); "
+        + f"D2D1A1A2=dihedral({d2},{d1},{a1},{a2}); "
         + "D3D1D2A1=select(sin(D1D2A1),"
-        + "dihedral(d3,d1,d2,a1),0); "
+        + f"dihedral({d3},{d1},{d2},{a1}),0); "
         + "A3A1A2D1=select(sin(A1A2D1),"
-        + "dihedral(a3,a1,a2,d1),0); "
-        + "D1D2A1=angle(d1,d2,a1); A1A2D1=angle(a1,a2,d1); "
+        + f"dihedral({a3},{a1},{a2},{d1}),0); "
+        + f"D1D2A1=angle({d1},{d2},{a1}); "
+        + f"A1A2D1=angle({a1},{a2},{d1}); "
     )
 
 
