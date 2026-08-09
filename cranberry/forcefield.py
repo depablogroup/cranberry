@@ -44,6 +44,11 @@ FORCE_GROUP_IDS = {
 }
 
 RESTYPE_TO_INDEX = {"A": 0, "U": 1, "G": 2, "C": 3}
+STACKING_COMPONENT_NAMES = ("stacking35", "stacking55", "stacking33")
+FUSED_STACKING_FORCE_NAME = "stacking"
+STACKING_SCALE_PARAMETERS = {
+    name: f"{name}_scale" for name in STACKING_COMPONENT_NAMES
+}
 BASE_TYPE_TO_CG_NAMES = {
     "A": ("R1", "A1", "A2"),
     "U": ("Y1", "U1", "Y2"),
@@ -259,12 +264,13 @@ class CranberryForceField:
             dihedral_indices = self._add_dihedrals(system, data, sugar_indices, angle_indices_all)
         if "pucker" in enabled:
             self._add_sugar_pucker(system, topology, periodic=periodic)
-        if "stacking35" in enabled:
-            self._add_stacking(system, data, "35", periodic=periodic)
-        if "stacking55" in enabled:
-            self._add_stacking(system, data, "55", periodic=periodic)
-        if "stacking33" in enabled:
-            self._add_stacking(system, data, "33", periodic=periodic)
+        stacking_components = tuple(
+            name for name in STACKING_COMPONENT_NAMES if name in enabled
+        )
+        if stacking_components:
+            self._add_stacking(
+                system, data, stacking_components, periodic=periodic
+            )
         if "pairing" in enabled:
             self._add_pairing(system, data, periodic=periodic)
         if "wca" in enabled:
@@ -581,32 +587,69 @@ class CranberryForceField:
                 force.addGlobalParameter(f"b{i}_C2{suffix}", float(c2_params[0]))
                 force.addGlobalParameter(f"k{i}_C2{suffix}", float(c2_params[1]))
 
-    def _add_stacking(self, system: mm.System, data: _TopologyData, stacking_type: str, *, periodic: bool) -> None:
-        para = self._params[f"stacking{stacking_type}"]
-        values = para["para"] * para["para0"]
-        mats = [values[:, :, i].ravel().tolist() for i in range(7)]
-        if stacking_type == "35":
-            g1_sign, g2_sign, g3_sign = "-", "", ""
-        elif stacking_type == "55":
-            g1_sign, g2_sign, g3_sign = "", "", "-"
-        else:
-            g1_sign, g2_sign, g3_sign = "-", "-", "-"
+    def _add_stacking(
+        self,
+        system: mm.System,
+        data: _TopologyData,
+        components: tuple[str, ...],
+        *,
+        periodic: bool,
+    ) -> None:
+        energy_terms = []
+        component_definitions = []
+        tables = []
+        table_parameter_names = (
+            "U0",
+            "r0",
+            "dr0",
+            "ctheta0",
+            "cpsi0",
+            "r_sens",
+            "theta_sens",
+        )
+        for component in components:
+            stacking_type = component.removeprefix("stacking")
+            term, definitions = _stacking_component_expression(stacking_type)
+            energy_terms.append(term)
+            component_definitions.append(definitions)
+            para = self._params[component]
+            values = para["para"] * para["para0"]
+            matrices = (
+                values[:, :, 0],
+                values[:, :, 1],
+                values[:, :, 2],
+                np.cos(values[:, :, 3]),
+                np.cos(values[:, :, 4]),
+                values[:, :, 5],
+                values[:, :, 6],
+            )
+            prefix = f"s{stacking_type}"
+            tables.extend(
+                (f"{prefix}_{name}_mat", matrix.ravel().tolist())
+                for name, matrix in zip(table_parameter_names, matrices)
+            )
+
         expr = (
-            "U0_mat(d_type, a_type) * fr * g1 * g2 * g3; "
-            "fr=1/2*(tanh(r_sens*(abs(r-r0)-dr0))-1); r=distance(d1, a1); "
-            f"g1=1/2*(tanh(theta_sens*({g1_sign}cos(D2D1A1)-cos(theta0)))+1); "
-            f"g2=1/2*(tanh(theta_sens*({g2_sign}cos(D1A1A2)-cos(theta0)))+1); "
-            f"g3=1/2*(tanh(theta_sens*({g3_sign}cos_normal_psi-cos(psi0)))+1); "
-            "cos_normal_psi=select(sin(D2D1A1)*sin(D1A1A2), cos_normal_psi_full, cos_normal_psi_partial); "
-            "cos_normal_psi_full=sin(D2D1A1)*sin(D1A1A2)*cos(phi)-cos(D2D1A1)*cos(D1A1A2); "
-            "cos_normal_psi_partial=-cos(D2D1A1)*cos(D1A1A2); "
-            "D2D1A1=angle(d2, d1, a1); D1A1A2=angle(d1, a1, a2); phi=dihedral(d2, d1, a1, a2); "
-            "r0=r0_mat(a_type, d_type); dr0=dr0_mat(a_type, d_type); theta0=theta0_mat(a_type, d_type); "
-            "psi0=psi0_mat(a_type, d_type); r_sens=r_sens_mat(a_type, d_type); theta_sens=theta_sens_mat(a_type, d_type);"
+            "+".join(energy_terms)
+            + ";"
+            + "".join(component_definitions)
+            + "cos_normal_psi=select(sin(D2D1A1)*sin(D1A1A2),"
+            + "cos_normal_psi_full,cos_normal_psi_partial);"
+            + "cos_normal_psi_full=sin(D2D1A1)*sin(D1A1A2)*cos(phi)"
+            + "-cos(D2D1A1)*cos(D1A1A2);"
+            + "cos_normal_psi_partial=-cos(D2D1A1)*cos(D1A1A2);"
+            + "r=distance(d1,a1);D2D1A1=angle(d2,d1,a1);"
+            + "D1A1A2=angle(d1,a1,a2);phi=dihedral(d2,d1,a1,a2)"
         )
         force = mm.CustomHbondForce(expr)
-        for name, vals in zip(["U0_mat", "r0_mat", "dr0_mat", "theta0_mat", "psi0_mat", "r_sens_mat", "theta_sens_mat"], mats):
-            force.addTabulatedFunction(name, mm.Discrete2DFunction(4, 4, vals))
+        for component in components:
+            force.addGlobalParameter(
+                STACKING_SCALE_PARAMETERS[component], 1.0
+            )
+        for name, values in tables:
+            force.addTabulatedFunction(
+                name, mm.Discrete2DFunction(4, 4, values)
+            )
         force.addPerAcceptorParameter("a_type")
         force.addPerDonorParameter("d_type")
         force.setCutoffDistance(0.7 * unit.nanometer)
@@ -617,34 +660,50 @@ class CranberryForceField:
             force.addDonor(cog_idx, normal_idx, -1, [RESTYPE_TO_INDEX[restype]])
             force.addAcceptor(cog_idx, normal_idx, -1, [RESTYPE_TO_INDEX[restype]])
             force.addExclusion(i, i)
-        group_name = f"stacking{stacking_type}"
-        force.setForceGroup(FORCE_GROUP_IDS[group_name])
-        force.setName(group_name)
+        force.setForceGroup(FORCE_GROUP_IDS[components[0]])
+        force.setName(FUSED_STACKING_FORCE_NAME)
         system.addForce(force)
 
     def _add_pairing(self, system: mm.System, data: _TopologyData, n_exclude_pairing: int = 1, *, periodic: bool) -> None:
         geom_pairs = self._params["pairing_geompairs"]
         para = self._params["pairing_para"] * self._params["pairing_para0"]
-        rows_by_type_pair: dict[tuple[str, str], list[tuple[int, str, np.ndarray]]] = defaultdict(list)
+        rows_by_donor: dict[str, dict[str, list[tuple[int, str, np.ndarray]]]] = defaultdict(
+            lambda: defaultdict(list)
+        )
         for i, pair in enumerate(geom_pairs):
-            rows_by_type_pair[(pair[0], pair[3])].append((i, pair[2], para[i]))
+            rows_by_donor[pair[0]][pair[3]].append((i, pair[2], para[i]))
 
         added_force = False
-        for type_pair_index, (d_type, a_type) in enumerate(rows_by_type_pair):
+        for donor_type_index, (d_type, rows_by_acceptor) in enumerate(rows_by_donor.items()):
             donor_residues = [entry for entry in data.virtual_site_summaries if entry[0][1] == d_type]
-            acceptor_residues = [entry for entry in data.virtual_site_summaries if entry[0][1] == a_type]
+            acceptor_types = set(rows_by_acceptor)
+            acceptor_residues = [
+                entry for entry in data.virtual_site_summaries if entry[0][1] in acceptor_types
+            ]
             if not donor_residues or not acceptor_residues:
                 continue
 
-            parameter_prefix = f"pairing{type_pair_index}"
-            force = mm.CustomHbondForce(_typed_pairing_expr(rows_by_type_pair[(d_type, a_type)], parameter_prefix))
+            slot_count = max(len(rows) for rows in rows_by_acceptor.values())
+            parameter_prefix = f"pairing_d{donor_type_index}"
+            force = mm.CustomHbondForce(
+                _donor_packed_pairing_expr(slot_count, parameter_prefix)
+            )
             force.setCutoffDistance(0.8 * unit.nanometer)
             force.setNonbondedMethod(force.CutoffPeriodic if periodic else force.CutoffNonPeriodic)
 
-            names = ["Up", "r0_", "dr0_", "theta0_", "dtheta0_", "psi0_", "phi1_", "dphi1_", "phi2_", "dphi2_", "r_sens", "theta_sens", "phi_sens"]
-            for local_index, (_, _, row) in enumerate(rows_by_type_pair[(d_type, a_type)]):
-                for name, value in zip(names, row):
-                    force.addGlobalParameter(_pairing_parameter_name(name, local_index, parameter_prefix), float(value))
+            packed_rows = {
+                restype: [
+                    (orientation, _packed_pairing_parameters(row))
+                    for _, orientation, row in rows
+                ]
+                for restype, rows in rows_by_acceptor.items()
+            }
+            zero_parameters = _packed_pairing_parameters(np.zeros(13))
+            for slot in range(slot_count):
+                for name in (*_PACKED_PAIRING_PARAMETER_NAMES, "psi_sign"):
+                    force.addPerAcceptorParameter(
+                        _pairing_parameter_name(name, slot, parameter_prefix)
+                    )
 
             donor_metadata: list[tuple[int, int]] = []
             acceptor_metadata: list[tuple[int, int]] = []
@@ -653,8 +712,22 @@ class CranberryForceField:
                 force.addDonor(cog_idx, normal[0], b1_idx, [])
                 donor_metadata.append((chainid, resid))
             for cog, normal in acceptor_residues:
-                cog_idx, _, resid, chainid, _, b1_idx = cog
-                force.addAcceptor(cog_idx, normal[0], b1_idx, [])
+                cog_idx, restype, resid, chainid, _, b1_idx = cog
+                rows = packed_rows.get(restype, ())
+                acceptor_parameters = []
+                for slot in range(slot_count):
+                    for name in (*_PACKED_PAIRING_PARAMETER_NAMES, "psi_sign"):
+                        if slot < len(rows):
+                            orientation, parameters = rows[slot]
+                            value = (
+                                1.0 if orientation == "+" else -1.0
+                            ) if name == "psi_sign" else parameters[name]
+                        else:
+                            value = 1.0 if name == "psi_sign" else zero_parameters[name]
+                        acceptor_parameters.append(float(value))
+                force.addAcceptor(
+                    cog_idx, normal[0], b1_idx, acceptor_parameters
+                )
                 acceptor_metadata.append((chainid, resid))
             for donor_index, (donor_chainid, donor_resid) in enumerate(donor_metadata):
                 for acceptor_index, (acceptor_chainid, acceptor_resid) in enumerate(acceptor_metadata):
@@ -825,51 +898,113 @@ def _as_quantity(value, target_unit):
     return value * target_unit
 
 
-def _typed_pairing_expr(rows: list[tuple[int, str, np.ndarray]], parameter_prefix: str) -> str:
+def _stacking_component_expression(
+    stacking_type: str,
+) -> tuple[str, str]:
+    if stacking_type == "35":
+        g1_sign, g2_sign, g3_sign = "-", "", ""
+    elif stacking_type == "55":
+        g1_sign, g2_sign, g3_sign = "", "", "-"
+    else:
+        g1_sign, g2_sign, g3_sign = "-", "-", "-"
+    prefix = f"s{stacking_type}"
+    energy = (
+        f"stacking{stacking_type}_scale*"
+        f"{prefix}_U0_mat(d_type,a_type)*{prefix}_fr*"
+        f"{prefix}_g1*{prefix}_g2*{prefix}_g3"
+    )
+    definitions = (
+        f"{prefix}_fr=0.5*(tanh({prefix}_r_sens*"
+        f"(abs(r-{prefix}_r0)-{prefix}_dr0))-1);"
+        f"{prefix}_g1=0.5*(tanh({prefix}_theta_sens*"
+        f"({g1_sign}cos(D2D1A1)-{prefix}_ctheta0))+1);"
+        f"{prefix}_g2=0.5*(tanh({prefix}_theta_sens*"
+        f"({g2_sign}cos(D1A1A2)-{prefix}_ctheta0))+1);"
+        f"{prefix}_g3=0.5*(tanh({prefix}_theta_sens*"
+        f"({g3_sign}cos_normal_psi-{prefix}_cpsi0))+1);"
+        f"{prefix}_r0={prefix}_r0_mat(a_type,d_type);"
+        f"{prefix}_dr0={prefix}_dr0_mat(a_type,d_type);"
+        f"{prefix}_ctheta0={prefix}_ctheta0_mat(a_type,d_type);"
+        f"{prefix}_cpsi0={prefix}_cpsi0_mat(a_type,d_type);"
+        f"{prefix}_r_sens={prefix}_r_sens_mat(a_type,d_type);"
+        f"{prefix}_theta_sens={prefix}_theta_sens_mat(a_type,d_type);"
+    )
+    return energy, definitions
+
+
+_PACKED_PAIRING_PARAMETER_NAMES = (
+    "Up",
+    "r0",
+    "dr0",
+    "theta0",
+    "dtheta0",
+    "psi0",
+    "phi1",
+    "dphi1",
+    "phi2",
+    "dphi2",
+    "r_sens",
+    "theta_sens",
+    "phi_sens",
+)
+
+
+def _packed_pairing_parameters(row: np.ndarray) -> dict[str, float]:
+    return {
+        name: float(value)
+        for name, value in zip(_PACKED_PAIRING_PARAMETER_NAMES, row)
+    }
+
+
+def _donor_packed_pairing_expr(slot_count: int, parameter_prefix: str) -> str:
     energy_terms = []
     component_terms = []
-    for local_index, (_, orientation, _) in enumerate(rows):
-        up = _pairing_parameter_name("Up", local_index, parameter_prefix)
-        energy_terms.append(f"{up}*fr{local_index}*g1_{local_index}*g2_{local_index}*g3_{local_index}*g4_{local_index}*h{local_index}")
-        component_terms.append(_pairing_component_expr(local_index, orientation, parameter_prefix))
+
+    for slot in range(slot_count):
+        def parameter(name: str) -> str:
+            return _pairing_parameter_name(name, slot, parameter_prefix)
+        energy_terms.append(
+            f"{parameter('Up')}*fr{slot}*g1_{slot}*g2_{slot}*"
+            f"g3_{slot}*g4_{slot}*h{slot}"
+        )
+        component_terms.append(
+            f"fr{slot}=0.5*(tanh({parameter('r_sens')}*"
+            f"(abs(r-{parameter('r0')})-{parameter('dr0')}))-1); "
+            f"g1_{slot}=0.5*(tanh({parameter('theta_sens')}*"
+            f"(cos(D2D1A1-{parameter('theta0')})-"
+            f"cos({parameter('dtheta0')})))+1); "
+            f"g2_{slot}=0.5*(tanh({parameter('theta_sens')}*"
+            f"(cos(D1A1A2-{parameter('theta0')})-"
+            f"cos({parameter('dtheta0')})))+1); "
+            f"g3_{slot}=0.5*(tanh({parameter('phi_sens')}*"
+            f"(cos(D3D1D2A1-{parameter('phi1')})-"
+            f"cos({parameter('dphi1')})))+1); "
+            f"g4_{slot}=0.5*(tanh({parameter('phi_sens')}*"
+            f"(cos(A3A1A2D1-{parameter('phi2')})-"
+            f"cos({parameter('dphi2')})))+1); "
+            f"h{slot}=0.5*(tanh({parameter('theta_sens')}*"
+            f"({parameter('psi_sign')}*cos_normal_psi-"
+            f"cos({parameter('psi0')})))+1); "
+        )
     return (
         "+".join(energy_terms)
         + "; "
         + "".join(component_terms)
-        + "cos_normal_psi=select(sin(D2D1A1)*sin(D1A1A2), cos_normal_psi_full, cos_normal_psi_partial); "
-        + "cos_normal_psi_full=sin(D2D1A1)*sin(D1A1A2)*cos(D2D1A1A2)-cos(D2D1A1)*cos(D1A1A2); "
+        + "cos_normal_psi=select(sin(D2D1A1)*sin(D1A1A2), "
+        + "cos_normal_psi_full, cos_normal_psi_partial); "
+        + "cos_normal_psi_full=sin(D2D1A1)*sin(D1A1A2)*"
+        + "cos(D2D1A1A2)-cos(D2D1A1)*cos(D1A1A2); "
         + "cos_normal_psi_partial=-cos(D2D1A1)*cos(D1A1A2); "
-        + "r=distance(d1, a1); D2D1A1=angle(d2, d1, a1); D1A1A2=angle(d1, a1, a2); D2D1A1A2=dihedral(d2, d1, a1, a2); "
-        + "D3D1D2A1=select(sin(D1D2A1), dihedral(d3, d1, d2, a1), 0); "
-        + "A3A1A2D1=select(sin(A1A2D1), dihedral(a3, a1, a2, d1), 0); "
-        + "D1D2A1=angle(d1, d2, a1); A1A2D1=angle(a1, a2, d1); "
+        + "r=distance(d1,a1); "
+        + "D2D1A1=angle(d2,d1,a1); D1A1A2=angle(d1,a1,a2); "
+        + "D2D1A1A2=dihedral(d2,d1,a1,a2); "
+        + "D3D1D2A1=select(sin(D1D2A1),"
+        + "dihedral(d3,d1,d2,a1),0); "
+        + "A3A1A2D1=select(sin(A1A2D1),"
+        + "dihedral(a3,a1,a2,d1),0); "
+        + "D1D2A1=angle(d1,d2,a1); A1A2D1=angle(a1,a2,d1); "
     )
 
 
 def _pairing_parameter_name(name: str, index: int, parameter_prefix: str) -> str:
     return f"{parameter_prefix}_{name}{index}" if parameter_prefix else f"{name}{index}"
-
-
-def _pairing_component_expr(index: int, orientation: str, parameter_prefix: str = "") -> str:
-    r_sens = _pairing_parameter_name("r_sens", index, parameter_prefix)
-    theta_sens = _pairing_parameter_name("theta_sens", index, parameter_prefix)
-    phi_sens = _pairing_parameter_name("phi_sens", index, parameter_prefix)
-    r0 = _pairing_parameter_name("r0_", index, parameter_prefix)
-    dr0 = _pairing_parameter_name("dr0_", index, parameter_prefix)
-    theta0 = _pairing_parameter_name("theta0_", index, parameter_prefix)
-    dtheta0 = _pairing_parameter_name("dtheta0_", index, parameter_prefix)
-    phi1 = _pairing_parameter_name("phi1_", index, parameter_prefix)
-    dphi1 = _pairing_parameter_name("dphi1_", index, parameter_prefix)
-    phi2 = _pairing_parameter_name("phi2_", index, parameter_prefix)
-    dphi2 = _pairing_parameter_name("dphi2_", index, parameter_prefix)
-    psi0 = _pairing_parameter_name("psi0_", index, parameter_prefix)
-    expr = (
-        f"fr{index}=1/2*(tanh({r_sens}*(abs(r-{r0})-{dr0}))-1); "
-        f"g1_{index}=1/2*(tanh({theta_sens}*(cos(D2D1A1-{theta0})-cos({dtheta0})))+1); "
-        f"g2_{index}=1/2*(tanh({theta_sens}*(cos(D1A1A2-{theta0})-cos({dtheta0})))+1); "
-        f"g3_{index}=1/2*(tanh({phi_sens}*(cos(D3D1D2A1-{phi1})-cos({dphi1})))+1); "
-        f"g4_{index}=1/2*(tanh({phi_sens}*(cos(A3A1A2D1-{phi2})-cos({dphi2})))+1); "
-    )
-    if orientation == "+":
-        return expr + f"h{index}=1/2*(tanh({theta_sens}*(cos_normal_psi-cos({psi0})))+1); "
-    return expr + f"h{index}=1/2*(tanh({theta_sens}*(-cos_normal_psi-cos({psi0})))+1); "

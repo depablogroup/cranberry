@@ -14,7 +14,7 @@
 </head>
 <body>
   <h1>Pairing Force Optimization Report</h1>
-  <p><strong>Date:</strong> 2026-08-06</p>
+  <p><strong>Date:</strong> 2026-08-09</p>
   <p><strong>Branch:</strong> <code>optimize-bp</code></p>
 
   <h2>Summary</h2>
@@ -26,45 +26,83 @@
     full expression even when most terms were inactive for that base-type pair.
   </p>
   <p>
-    The optimized construction groups the 25 geometry rows into 9 donor/acceptor base-type
-    forces. Each force includes only compatible residues and only the geometry rows for that
-    type pair. All split forces retain name <code>pairing</code> and force group 14, so energy
-    decomposition and detailed reporting still see one public pairing component. A second pass
-    moved same-chain near-residue pairing exclusions from the CUDA expression into explicit
-    <code>CustomHbondForce.addExclusion()</code> entries, removing runtime <code>step</code>, <code>abs</code>,
-    and chain-id <code>delta</code> gates from every candidate interaction.
+    The first optimization grouped the 25 geometry rows into 9 donor/acceptor base-type forces.
+    The retained third pass packs those rows into 4 donor-specialized forces. A fourth pass moves
+    the already selected parameter slots directly onto each acceptor, removing the
+    <code>Discrete1DFunction</code> lookups while keeping the same four kernels and no runtime type
+    branches. All forces retain name
+    <code>pairing</code> and force group 14. Same-chain near-residue exclusions remain explicit
+    <code>CustomHbondForce.addExclusion()</code> entries, and the guarded dihedral construction is
+    unchanged.
+  </p>
+  <p>
+    The retained stacking pass fuses <code>stacking35</code>, <code>stacking55</code>, and
+    <code>stacking33</code> into one <code>CustomHbondForce</code>. It traverses candidate base
+    pairs and computes distance, angles, dihedral, and normal geometry once. Global scale
+    parameters preserve exact component reporting without adding extra forces to normal MD.
   </p>
 
   <h2>Core Code Path</h2>
-  <pre><code>rows_by_type_pair: dict[tuple[str, str], list[tuple[int, str, np.ndarray]]] = defaultdict(list)
+  <pre><code>rows_by_donor = defaultdict(lambda: defaultdict(list))
 for i, pair in enumerate(geom_pairs):
-    rows_by_type_pair[(pair[0], pair[3])].append((i, pair[2], para[i]))
+    rows_by_donor[pair[0]][pair[3]].append((i, pair[2], para[i]))
 
-for type_pair_index, (d_type, a_type) in enumerate(rows_by_type_pair):
-    donor_residues = [entry for entry in data.virtual_site_summaries if entry[0][1] == d_type]
-    acceptor_residues = [entry for entry in data.virtual_site_summaries if entry[0][1] == a_type]
-    if not donor_residues or not acceptor_residues:
-        continue
-
-    parameter_prefix = f"pairing{type_pair_index}"
+for donor_type_index, (d_type, rows_by_acceptor) in enumerate(rows_by_donor.items()):
+    slot_count = max(len(rows) for rows in rows_by_acceptor.values())
+    parameter_prefix = f"pairing_d{donor_type_index}"
     force = mm.CustomHbondForce(
-        _typed_pairing_expr(rows_by_type_pair[(d_type, a_type)], parameter_prefix)
-    )</code></pre>
+        _donor_packed_pairing_expr(slot_count, parameter_prefix)
+    )
+    for slot in range(slot_count):
+        for name in parameter_names:
+            force.addPerAcceptorParameter(parameter_name(name, slot))
+
+    # Values are selected once while the System is constructed.
+    force.addAcceptor(cog_idx, normal_idx, b1_idx, acceptor_parameters)</code></pre>
   <p>
-    The helper namespaces global parameters per split force because OpenMM requires same-named
-    global parameters across forces to have identical default values. Donor/acceptor metadata is
-    used at construction time only to add same-chain exclusions; the force expression no longer
-    carries residue-id or chain-id per-particle parameters.
+    Each donor type gets one specialized force. Only compatible acceptor residues are registered,
+    so no acceptor-validity branch is needed. Parameter slots are stored directly on each
+    acceptor, and zero-amplitude slots pad type pairs with fewer rows. The public energy
+    decomposition remains unchanged.
+  </p>
+
+  <h2>Second Optimization Pass</h2>
+  <p>
+    A direct-dihedral shortcut was tested as a possible optimization, but it was rejected: idealized collinear configurations produced NaN energies on CUDA. The original guarded construction is retained. An earlier four-force donor-type regrouping was discarded because its explicit acceptor-type dispatch outweighed the reduction in force kernels.
+  </p>
+
+  <h2>Third Optimization Pass</h2>
+  <p>
+    Nsight Compute showed that the 9 typed forces launched 9 one-block
+    <code>computeHbondForces</code> kernels per step. The retained branch-free donor packing
+    reduces this to 4 launches. The earlier <code>370 us</code> nine-kernel figure was not an
+    isolated like-for-like capture and is not used to quantify the gain. The clean evidence is
+    the repeated end-to-end benchmark below.
+    A guarded trigonometric common-subexpression rewrite was energy-exact but unchanged in wall
+    time, showing that OpenMM already optimized those expressions. A transformed-parameter packed
+    variant was also exact but slightly slower than retaining the original 13 parameters.
+  </p>
+
+  <h2>Fourth Optimization Pass</h2>
+  <p>
+    The four donor-specialized forces originally fetched each slot parameter from a four-entry
+    table indexed by acceptor type. Since an acceptor's type is fixed when the OpenMM
+    <code>System</code> is created, the final implementation resolves those values in Python and
+    stores them as per-acceptor parameters. Eight interleaved full-model repeats measured
+    <code>1.236 +/- 0.037 s</code> for the table-backed form and
+    <code>1.189 +/- 0.010 s</code> for direct acceptor parameters, a 3.9% end-to-end gain.
+    A focused Nsight Compute capture kept the same four one-block launches and reduced their
+    instrumented total from about <code>147 us</code> to <code>136 us</code>.
   </p>
 
   <h2>Validation</h2>
-  <pre><code>conda run -n cranberry-dev python -m pytest -q tests/test_energy.py
-.....                                                                    [100%]
-5 passed in 6.12s
+  <pre><code>python -m pytest -q tests/test_energy.py tests/test_md.py
+.........................                                                [100%]
+26 passed in 22.40s
 
-conda run -n cranberry-dev python -m pytest -q tests/test_energy.py tests/test_md.py
-........................                                                 [100%]
-24 passed in 29.80s</code></pre>
+python -m pytest -q
+79 passed, 1 warning in 78.27s</code></pre>
+
   <p>
     The CPU energy regression covers <code>2ntCG</code>, <code>157d</code>, <code>1l2x</code>, and
     <code>1zih</code>. The MD tests cover force periodicity, reporting, and related runtime paths.
@@ -89,12 +127,64 @@ conda run -n cranberry-dev python -m pytest -q tests/test_energy.py tests/test_m
     </tbody>
   </table>
 
+  <p>
+    Scratch CUDA expression ablations on 1l2x (1,000 steps after warm-up) measured <code>0.261 s</code> for the guarded expression, <code>0.230 s</code> with the dihedral gates removed, <code>0.233 s</code> with the psi gate removed, and <code>0.196 s</code> with all angular/dihedral/psi gates removed. The theta gates alone were within timing noise at <code>0.257 s</code>. These are diagnostic timings only; the production expression remains unchanged.
+  </p>
+
+  <p>
+    Final five-repeat CUDA timing for the raw-table four-force implementation was
+    <code>1.191 +/- 0.014 s</code> for all forces and <code>0.677 +/- 0.021 s</code> without
+    pairing. The guarded nine-force baseline was approximately <code>1.278 +/- 0.035 s</code>
+    and <code>0.690 +/- 0.018 s</code>, respectively. This is about 6.8% faster end to end and
+    reduces pairing's marginal cost from about <code>0.588 s</code> to <code>0.513 s</code>
+    per 5,000 steps.
+  </p>
+
+  <p>
+    Final five-repeat timing after direct acceptor parameter packing measured
+    <code>1.159 +/- 0.023 s</code> for all forces and
+    <code>0.674 +/- 0.014 s</code> without pairing, or 1864 ns/day for the full model.
+    Pairing's current marginal cost is approximately <code>0.485 s</code> per 5,000 steps.
+  </p>
+
+  <h2>Spline And Stacking Experiments</h2>
+  <p>
+    Precomputing the two constant stacking cosines was energy-exact but 0.7% slower in an
+    unfused interleaved benchmark; that isolated rewrite was rejected. The retained fused
+    implementation instead shares all geometric work and evaluates the three parameterized
+    energies in one expression. Scale parameters are set to one during dynamics. Energy and MD
+    reporting temporarily isolate each scale, evaluate the single stacking group, and restore
+    the previous context values.
+  </p>
+  <p>
+    Nsight Compute measured three unfused one-block kernels at approximately
+    <code>41 us</code> each, or <code>124 us</code> total. The fused kernel takes
+    <code>46 us</code>. Register use rises from 80 to 113 per thread, but eliminating two launches
+    and duplicate geometry reduces instrumented stacking kernel time by about 63%.
+  </p>
+  <p>
+    Eight interleaved repeats measured <code>1.154 +/- 0.022 s</code> before fusion and
+    <code>0.913 +/- 0.015 s</code> after fusion, a 26.4% whole-model speedup. The independent
+    five-repeat production timing is <code>0.901 +/- 0.018 s</code>, or 2398 ns/day, compared
+    with <code>1.159 +/- 0.023 s</code> before fusion. This is a 22.3% reduction in wall time.
+  </p>
+  <p>
+    Spline interaction pruning was also investigated. Explicitly enumerating active pairs was
+    exact and appeared 8.2% faster on
+    <code>1l2x</code>, but required quadratic pair-list storage. A scalable single-group version
+    preserved the asymmetric legacy table orientation and all regression energies, but improved
+    wall time by only 0.45%, within noise. Neither spline variant was retained.
+  </p>
+
+
   <h2>Risks And Follow-Up</h2>
   <ul>
     <li>The system now contains multiple OpenMM forces named <code>pairing</code>; they intentionally share force group 14.</li>
+    <li>Nsight Compute 2022.4 was extracted under <code>/tmp/nsight-local</code> and used for kernel-level profiling; it is not a project dependency.</li>
     <li>A one-force-per-geometry experiment passed energy regression but was slower on CUDA: about <code>2.805 s</code> per 5k all-force steps, so it was discarded.</li>
     <li>The CUDA benchmark is short and intended for local directionality, not a publication snapshot.</li>
-    <li>Pairing still costs roughly 0.61 s per 5k steps on <code>1l2x</code>; further work may need lower-level expression changes or OpenMM plugin work.</li>
+    <li>The fused stacking force occupies the force group of its first enabled stacking component. Separate component values remain available through Cranberry's energy-reporting APIs, but direct external OpenMM force-group queries no longer map groups 11, 12, and 13 to three runtime forces.</li>
+    <li>After fusion, fresh ablations estimate pairing at 0.45 s, aggregate stacking at 0.27 s, and spline at 0.18 s per 5,000 steps. Pairing is again the largest remaining force bottleneck.</li>
   </ul>
 </body>
 </html>

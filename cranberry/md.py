@@ -17,7 +17,11 @@ import openmm as mm
 from openmm import LangevinMiddleIntegrator, Platform, unit
 from openmm import app
 
-from cranberry.forcefield import FORCE_GROUP_IDS, CranberryForceField, default_model_name, get_model_spec, prepare_periodic_positions, validate_periodic_box_cutoffs
+from cranberry.energy_decomposition import (
+    force_group_energy,
+    present_force_group_names,
+)
+from cranberry.forcefield import CranberryForceField, default_model_name, get_model_spec, prepare_periodic_positions, validate_periodic_box_cutoffs
 from cranberry.pdbio import write_pdb_with_conect
 from cranberry.validation import validate_canonical_pdb
 
@@ -319,9 +323,10 @@ def _energy_snapshot(simulation: app.Simulation) -> dict[str, object]:
     state = simulation.context.getState(getEnergy=True)
     force_groups = {}
     for name in _present_force_group_names(simulation.system):
-        group = FORCE_GROUP_IDS[name]
-        group_state = simulation.context.getState(getEnergy=True, groups={group})
-        force_groups[name] = group_state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
+        energy = force_group_energy(
+            simulation.context, simulation.system, name
+        )
+        force_groups[name] = energy.value_in_unit(unit.kilojoule_per_mole)
     return {
         "potential_energy_kj_per_mol": state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole),
         "force_groups_kj_per_mol": force_groups,
@@ -425,8 +430,7 @@ def _sha256(path: Path) -> str:
 
 
 def _present_force_group_names(system: mm.System) -> list[str]:
-    names_by_group = {system.getForce(i).getForceGroup(): system.getForce(i).getName() for i in range(system.getNumForces())}
-    return [name for name, group in FORCE_GROUP_IDS.items() if names_by_group.get(group) == name]
+    return present_force_group_names(system)
 
 
 def calculate_langevin_friction(topology: app.Topology, system: mm.System, temperature) -> unit.Quantity:
@@ -471,8 +475,9 @@ class DetailedEnergyReporter:
             f"{state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole):.8f}",
         ]
         for name in names:
-            group = FORCE_GROUP_IDS[name]
-            energy = simulation.context.getState(getEnergy=True, groups={group}).getPotentialEnergy()
+            energy = force_group_energy(
+                simulation.context, simulation.system, name
+            )
             values.append(f"{energy.value_in_unit(unit.kilojoule_per_mole):.8f}")
         self._out.write(",".join(values) + "\n")
         self._out.flush()

@@ -6,7 +6,11 @@ from pathlib import Path
 from openmm import LangevinMiddleIntegrator, Platform, unit
 from openmm import app
 
-from cranberry.forcefield import FORCE_GROUP_IDS, CranberryForceField
+from cranberry.energy_decomposition import (
+    force_group_energy,
+    present_force_group_names,
+)
+from cranberry.forcefield import CranberryForceField
 from cranberry.validation import validate_canonical_pdb
 
 
@@ -53,14 +57,8 @@ def compute_energy(
 
     total = simulation.context.getState(getEnergy=True).getPotentialEnergy()
     components = {}
-    for name, group in FORCE_GROUP_IDS.items():
-        if group >= 32:
-            continue
-        energy = simulation.context.getState(getEnergy=True, groups={group}).getPotentialEnergy()
-        if abs(energy.value_in_unit(unit.kilojoule_per_mole)) > 0 or name in _present_force_names(system):
-            components[name] = energy
+    for name in present_force_group_names(system):
+        components[name] = force_group_energy(
+            simulation.context, system, name
+        )
     return EnergyReport(total_potential_energy=total, components=components)
-
-
-def _present_force_names(system) -> set[str]:
-    return {system.getForce(i).getName() for i in range(system.getNumForces())}

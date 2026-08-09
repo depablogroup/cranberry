@@ -39,7 +39,7 @@ def test_create_system_periodic_switches_legacy_pbc_forces():
         assert _force_by_name(nonperiodic, name).getNonbondedMethod() == _force_by_name(nonperiodic, name).CutoffNonPeriodic
         assert _force_by_name(periodic, name).getNonbondedMethod() == _force_by_name(periodic, name).CutoffPeriodic
 
-    for name in ["stacking35", "stacking55", "stacking33", "pairing"]:
+    for name in ["stacking", "pairing"]:
         assert _force_by_name(nonperiodic, name).getNonbondedMethod() == _force_by_name(nonperiodic, name).CutoffNonPeriodic
         assert _force_by_name(periodic, name).getNonbondedMethod() == _force_by_name(periodic, name).CutoffPeriodic
 
@@ -162,6 +162,10 @@ def test_run_md_writes_default_outputs(tmp_path):
 
     detailed = result.detailed_log_path.read_text().splitlines()
     assert detailed[0].startswith('#"Step","Time (ps)","Potential Energy (kJ/mole)","bond (kJ/mole)"')
+    assert all(
+        f'"{name} (kJ/mole)"' in detailed[0]
+        for name in ("stacking35", "stacking55", "stacking33")
+    )
     assert len(detailed) == 2
     validate_canonical_pdb(result.final_pdb_path).raise_for_errors()
 
@@ -214,6 +218,15 @@ def test_run_md_writes_minimization_report(tmp_path):
     assert "after_kj_per_mol" in report
     assert "force_groups_before_kj_per_mol" in report
     assert "force_groups_after_kj_per_mol" in report
+    for key in (
+        "force_groups_before_kj_per_mol",
+        "force_groups_after_kj_per_mol",
+    ):
+        assert {
+            "stacking35",
+            "stacking55",
+            "stacking33",
+        } <= report[key].keys()
 
 def test_run_md_archives_distinct_args_only(tmp_path):
     pdb = data_path("examples/2ntCG_cg_vs_conect.pdb")

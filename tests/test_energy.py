@@ -2,7 +2,12 @@ import pytest
 
 from cranberry.data import data_path
 from cranberry.energy import compute_energy
-from cranberry.forcefield import CranberryForceField
+from cranberry.energy_decomposition import present_force_group_names
+from cranberry.forcefield import (
+    FUSED_STACKING_FORCE_NAME,
+    STACKING_SCALE_PARAMETERS,
+    CranberryForceField,
+)
 from openmm import app
 
 
@@ -75,10 +80,62 @@ def test_create_system_adds_named_forces():
     pdb = app.PDBFile(str(data_path("examples/2ntCG_cg_vs_conect.pdb")))
     system = CranberryForceField().createSystem(pdb.topology, positions=pdb.positions)
     names = {system.getForce(index).getName() for index in range(system.getNumForces())}
-    assert {"bond", "angle", "dihedral", "pucker", "stacking35", "stacking55", "stacking33", "pairing", "wca", "spline", "electrostatic"} <= names
+    assert {"bond", "angle", "dihedral", "pucker", "stacking", "pairing", "wca", "spline", "electrostatic"} <= names
     spline = next(force for force in (system.getForce(i) for i in range(system.getNumForces())) if force.getName() == "spline")
     assert spline.getNumTabulatedFunctions() == 3
     assert {spline.getTabulatedFunctionName(i) for i in range(3)} == {"U", "rmin", "rmax"}
+    stacking = next(
+        force
+        for force in (
+            system.getForce(i) for i in range(system.getNumForces())
+        )
+        if force.getName() == FUSED_STACKING_FORCE_NAME
+    )
+    global_parameters = {
+        stacking.getGlobalParameterName(i)
+        for i in range(stacking.getNumGlobalParameters())
+    }
+    assert global_parameters == set(STACKING_SCALE_PARAMETERS.values())
+
+
+def test_pairing_is_packed_by_donor_type():
+    pdb = app.PDBFile(str(data_path("examples/1l2x_cg_vs_conect.pdb")))
+    system = CranberryForceField().createSystem(
+        pdb.topology, positions=pdb.positions, enabled_forces=["pairing"]
+    )
+    pairing_forces = [
+        system.getForce(index)
+        for index in range(system.getNumForces())
+        if system.getForce(index).getName() == "pairing"
+    ]
+
+    assert len(pairing_forces) == 4
+    assert all(force.getNumPerAcceptorParameters() >= 14 for force in pairing_forces)
+    assert all(force.getNumPerAcceptorParameters() % 14 == 0 for force in pairing_forces)
+    assert all(force.getNumTabulatedFunctions() == 0 for force in pairing_forces)
+
+
+def test_fused_stacking_preserves_enabled_component_selection():
+    pdb = app.PDBFile(str(data_path("examples/1l2x_cg_vs_conect.pdb")))
+    system = CranberryForceField().createSystem(
+        pdb.topology,
+        positions=pdb.positions,
+        enabled_forces=["stacking55"],
+    )
+    stacking = next(
+        force
+        for force in (
+            system.getForce(i) for i in range(system.getNumForces())
+        )
+        if force.getName() == FUSED_STACKING_FORCE_NAME
+    )
+
+    assert present_force_group_names(system) == ["stacking55"]
+    assert stacking.getNumGlobalParameters() == 1
+    assert (
+        stacking.getGlobalParameterName(0)
+        == STACKING_SCALE_PARAMETERS["stacking55"]
+    )
 
 
 @pytest.mark.parametrize("filename,expected", EXPECTED_ENERGIES.items())
