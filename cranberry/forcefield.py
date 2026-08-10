@@ -587,10 +587,8 @@ class CranberryForceField:
             f"g1=1/2*(tanh(theta_sens*({g1_sign}cos(D2D1A1)-cos(theta0)))+1); "
             f"g2=1/2*(tanh(theta_sens*({g2_sign}cos(D1A1A2)-cos(theta0)))+1); "
             f"g3=1/2*(tanh(theta_sens*({g3_sign}cos_normal_psi-cos(psi0)))+1); "
-            "cos_normal_psi=select(sin(D2D1A1)*sin(D1A1A2), cos_normal_psi_full, cos_normal_psi_partial); "
-            "cos_normal_psi_full=sin(D2D1A1)*sin(D1A1A2)*cos(phi)-cos(D2D1A1)*cos(D1A1A2); "
-            "cos_normal_psi_partial=-cos(D2D1A1)*cos(D1A1A2); "
-            "D2D1A1=angle(d2, d1, a1); D1A1A2=angle(d1, a1, a2); phi=dihedral(d2, d1, a1, a2); "
+            "cos_normal_psi=(distance(d2,a1)^2+distance(d1,a2)^2-distance(d2,a2)^2-distance(d1,a1)^2)/(2*distance(d1,d2)*distance(a1,a2)); "
+            "D2D1A1=angle(d2, d1, a1); D1A1A2=angle(d1, a1, a2); "
             "r0=r0_mat(a_type, d_type); dr0=dr0_mat(a_type, d_type); theta0=theta0_mat(a_type, d_type); "
             "psi0=psi0_mat(a_type, d_type); r_sens=r_sens_mat(a_type, d_type); theta_sens=theta_sens_mat(a_type, d_type);"
         )
