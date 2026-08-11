@@ -136,3 +136,43 @@ def test_cranberry_stacking35_cpu_forces_finite_for_collinear_base_normals():
     assert np.isfinite(forces).all()
     mm.LocalEnergyMinimizer.minimize(context, maxIterations=1)
     del context
+
+
+def test_cranberry_pairing_cpu_forces_finite_for_parallel_base_normals():
+    pdb = app.PDBFile(str(data_path("examples/1l2x_cg_vs_conect.pdb")))
+    coordinates_nm = np.array(
+        [position.value_in_unit(unit.nanometer) for position in pdb.positions],
+        dtype=float,
+    )
+    residue_sites = {}
+    for atom in pdb.topology.atoms():
+        if atom.name in {"BC", "BN"}:
+            residue_sites.setdefault(atom.residue.index, {})[atom.name] = atom.index
+
+    for sites in residue_sites.values():
+        center = coordinates_nm[sites["BC"]]
+        coordinates_nm[sites["BN"]] = center + [1.0, 0.0, 0.0]
+
+    positions = unit.Quantity(coordinates_nm, unit.nanometer)
+    system = CranberryForceField().createSystem(
+        pdb.topology,
+        positions=positions,
+        enabled_forces=["pairing"],
+    )
+    context = mm.Context(
+        system,
+        mm.VerletIntegrator(0.001 * unit.picoseconds),
+        mm.Platform.getPlatformByName("CPU"),
+    )
+    context.setPositions(positions)
+
+    state = context.getState(getEnergy=True, getForces=True)
+    energy = state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
+    forces = state.getForces(asNumpy=True).value_in_unit(
+        unit.kilojoule_per_mole / unit.nanometer
+    )
+
+    assert np.isfinite(energy)
+    assert np.isfinite(forces).all()
+    mm.LocalEnergyMinimizer.minimize(context, maxIterations=1)
+    del context

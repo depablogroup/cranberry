@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from itertools import combinations, product
 from pathlib import Path
@@ -43,6 +44,15 @@ FORCE_GROUP_IDS = {
 }
 
 RESTYPE_TO_INDEX = {"A": 0, "U": 1, "G": 2, "C": 3}
+STACKING_COMPONENT_NAMES = ("stacking35", "stacking55", "stacking33")
+FUSED_STACKING_FORCE_NAME = "stacking"
+STACKING_SCALE_PARAMETERS = {
+    name: f"{name}_scale" for name in STACKING_COMPONENT_NAMES
+}
+_PAIRING_CUTOFF_NM = 0.8
+# createSystem() does not know the eventual OpenMM platform, so this is a
+# conservative, platform-independent bound on explicit pair storage.
+_PAIRING_COMPOUND_MAX_BONDS = 8192
 BASE_TYPE_TO_CG_NAMES = {
     "A": ("R1", "A1", "A2"),
     "U": ("Y1", "U1", "Y2"),
@@ -197,13 +207,20 @@ def validate_periodic_box_cutoffs(system: mm.System) -> None:
         force = system.getForce(index)
         get_cutoff = getattr(force, "getCutoffDistance", None)
         get_method = getattr(force, "getNonbondedMethod", None)
-        if get_cutoff is None or get_method is None:
+        cutoff_nm = None
+        if get_cutoff is not None and get_method is not None:
+            method = get_method()
+            periodic_method = getattr(force, "CutoffPeriodic", None)
+            if periodic_method is not None and method == periodic_method:
+                cutoff_nm = get_cutoff().value_in_unit(unit.nanometer)
+        elif (
+            isinstance(force, mm.CustomCompoundBondForce)
+            and force.getName() == "pairing"
+            and force.usesPeriodicBoundaryConditions()
+        ):
+            cutoff_nm = _PAIRING_CUTOFF_NM
+        if cutoff_nm is None:
             continue
-        method = get_method()
-        periodic_method = getattr(force, "CutoffPeriodic", None)
-        if periodic_method is None or method != periodic_method:
-            continue
-        cutoff_nm = get_cutoff().value_in_unit(unit.nanometer)
         if cutoff_nm > half_min_box_nm:
             name = force.getName() or type(force).__name__
             raise ValueError(
@@ -258,12 +275,13 @@ class CranberryForceField:
             dihedral_indices = self._add_dihedrals(system, data, sugar_indices, angle_indices_all)
         if "pucker" in enabled:
             self._add_sugar_pucker(system, topology, periodic=periodic)
-        if "stacking35" in enabled:
-            self._add_stacking(system, data, "35", periodic=periodic)
-        if "stacking55" in enabled:
-            self._add_stacking(system, data, "55", periodic=periodic)
-        if "stacking33" in enabled:
-            self._add_stacking(system, data, "33", periodic=periodic)
+        stacking_components = tuple(
+            name for name in STACKING_COMPONENT_NAMES if name in enabled
+        )
+        if stacking_components:
+            self._add_stacking(
+                system, data, stacking_components, periodic=periodic
+            )
         if "pairing" in enabled:
             self._add_pairing(system, data, periodic=periodic)
         if "wca" in enabled:
@@ -391,19 +409,28 @@ class CranberryForceField:
     def _add_spline(self, system: mm.System, data: _TopologyData, base_idx_lim: int, *, periodic: bool) -> None:
         y_nodes = self._params["spline_y_nodes"]
         x_lim = self._params["spline_x_lim"]
-        n_types = y_nodes.shape[0]
-        expr = "0"
-        active_pairs: list[tuple[int, int]] = []
-        for i, j in product(range(n_types), range(n_types)):
-            if i < base_idx_lim or j < base_idx_lim:
-                expr += f"+delta(type1-{i})*delta(type2-{j})*U{i}{j}(r)"
-                active_pairs.append((i, j))
+        y_nodes, x_lim = _legacy_compatible_spline_tables(y_nodes, x_lim, base_idx_lim)
+        n_types_x, n_types_y, n_nodes = y_nodes.shape
+        expr = (
+            "active*U(type1,type2,node);"
+            f"active=step({base_idx_lim - 0.5}-min(type1,type2));"
+            f"node=(r-rmin(type1,type2))*{n_nodes - 1}/(rmax(type1,type2)-rmin(type1,type2))"
+        )
         force = mm.CustomNonbondedForce(expr)
-        for i, j in active_pairs:
-            force.addTabulatedFunction(
-                f"U{i}{j}",
-                mm.Continuous1DFunction(y_nodes[i, j], float(x_lim[i, j, 0]), float(x_lim[i, j, 1])),
-            )
+        force.addTabulatedFunction(
+            "U",
+            mm.Continuous3DFunction(
+                n_types_x, n_types_y, n_nodes,
+                y_nodes.transpose(2, 1, 0).ravel(),
+                0, n_types_x - 1, 0, n_types_y - 1, 0, n_nodes - 1,
+            ),
+        )
+        force.addTabulatedFunction(
+            "rmin", mm.Discrete2DFunction(n_types_x, n_types_y, x_lim[:, :, 0].T.ravel())
+        )
+        force.addTabulatedFunction(
+            "rmax", mm.Discrete2DFunction(n_types_x, n_types_y, x_lim[:, :, 1].T.ravel())
+        )
         force.addPerParticleParameter("type")
         for name in data.atom_names:
             force.addParticle([HIGH_RES_SPLINE_TYPES[name]])
@@ -571,30 +598,65 @@ class CranberryForceField:
                 force.addGlobalParameter(f"b{i}_C2{suffix}", float(c2_params[0]))
                 force.addGlobalParameter(f"k{i}_C2{suffix}", float(c2_params[1]))
 
-    def _add_stacking(self, system: mm.System, data: _TopologyData, stacking_type: str, *, periodic: bool) -> None:
-        para = self._params[f"stacking{stacking_type}"]
-        values = para["para"] * para["para0"]
-        mats = [values[:, :, i].ravel().tolist() for i in range(7)]
-        if stacking_type == "35":
-            g1_sign, g2_sign, g3_sign = "-", "", ""
-        elif stacking_type == "55":
-            g1_sign, g2_sign, g3_sign = "", "", "-"
-        else:
-            g1_sign, g2_sign, g3_sign = "-", "-", "-"
+    def _add_stacking(
+        self,
+        system: mm.System,
+        data: _TopologyData,
+        components: tuple[str, ...],
+        *,
+        periodic: bool,
+    ) -> None:
+        energy_terms = []
+        component_definitions = []
+        tables = []
+        table_parameter_names = (
+            "U0",
+            "r0",
+            "dr0",
+            "ctheta0",
+            "cpsi0",
+            "r_sens",
+            "theta_sens",
+        )
+        for component in components:
+            stacking_type = component.removeprefix("stacking")
+            term, definitions = _stacking_component_expression(stacking_type)
+            energy_terms.append(term)
+            component_definitions.append(definitions)
+            para = self._params[component]
+            values = para["para"] * para["para0"]
+            matrices = (
+                values[:, :, 0],
+                values[:, :, 1],
+                values[:, :, 2],
+                np.cos(values[:, :, 3]),
+                np.cos(values[:, :, 4]),
+                values[:, :, 5],
+                values[:, :, 6],
+            )
+            prefix = f"s{stacking_type}"
+            tables.extend(
+                (f"{prefix}_{name}_mat", matrix.ravel().tolist())
+                for name, matrix in zip(table_parameter_names, matrices)
+            )
+
         expr = (
-            "U0_mat(d_type, a_type) * fr * g1 * g2 * g3; "
-            "fr=1/2*(tanh(r_sens*(abs(r-r0)-dr0))-1); r=distance(d1, a1); "
-            f"g1=1/2*(tanh(theta_sens*({g1_sign}cos(D2D1A1)-cos(theta0)))+1); "
-            f"g2=1/2*(tanh(theta_sens*({g2_sign}cos(D1A1A2)-cos(theta0)))+1); "
-            f"g3=1/2*(tanh(theta_sens*({g3_sign}cos_normal_psi-cos(psi0)))+1); "
-            "cos_normal_psi=(distance(d2,a1)^2+distance(d1,a2)^2-distance(d2,a2)^2-distance(d1,a1)^2)/(2*distance(d1,d2)*distance(a1,a2)); "
-            "D2D1A1=angle(d2, d1, a1); D1A1A2=angle(d1, a1, a2); "
-            "r0=r0_mat(a_type, d_type); dr0=dr0_mat(a_type, d_type); theta0=theta0_mat(a_type, d_type); "
-            "psi0=psi0_mat(a_type, d_type); r_sens=r_sens_mat(a_type, d_type); theta_sens=theta_sens_mat(a_type, d_type);"
+            "+".join(energy_terms)
+            + ";"
+            + "".join(component_definitions)
+            + f"cos_normal_psi={_normal_cosine_expression()};"
+            + "r=distance(d1,a1);D2D1A1=angle(d2,d1,a1);"
+            + "D1A1A2=angle(d1,a1,a2)"
         )
         force = mm.CustomHbondForce(expr)
-        for name, vals in zip(["U0_mat", "r0_mat", "dr0_mat", "theta0_mat", "psi0_mat", "r_sens_mat", "theta_sens_mat"], mats):
-            force.addTabulatedFunction(name, mm.Discrete2DFunction(4, 4, vals))
+        for component in components:
+            force.addGlobalParameter(
+                STACKING_SCALE_PARAMETERS[component], 1.0
+            )
+        for name, values in tables:
+            force.addTabulatedFunction(
+                name, mm.Discrete2DFunction(4, 4, values)
+            )
         force.addPerAcceptorParameter("a_type")
         force.addPerDonorParameter("d_type")
         force.setCutoffDistance(0.7 * unit.nanometer)
@@ -605,52 +667,201 @@ class CranberryForceField:
             force.addDonor(cog_idx, normal_idx, -1, [RESTYPE_TO_INDEX[restype]])
             force.addAcceptor(cog_idx, normal_idx, -1, [RESTYPE_TO_INDEX[restype]])
             force.addExclusion(i, i)
-        group_name = f"stacking{stacking_type}"
-        force.setForceGroup(FORCE_GROUP_IDS[group_name])
-        force.setName(group_name)
+        force.setForceGroup(FORCE_GROUP_IDS[components[0]])
+        force.setName(FUSED_STACKING_FORCE_NAME)
         system.addForce(force)
 
     def _add_pairing(self, system: mm.System, data: _TopologyData, n_exclude_pairing: int = 1, *, periodic: bool) -> None:
         geom_pairs = self._params["pairing_geompairs"]
         para = self._params["pairing_para"] * self._params["pairing_para0"]
-        expr = ""
-        for i, pair in enumerate(geom_pairs):
-            d_type_id, a_type_id = RESTYPE_TO_INDEX[pair[0]], RESTYPE_TO_INDEX[pair[3]]
-            expr += f"Up{i}*fr{i}*g1_{i}*g2_{i}*g3_{i}*g4_{i}*h{i}*delta(d_type-{d_type_id})*delta(a_type-{a_type_id})*(1-is_excluded)+"
-        expr = expr.rstrip("+") + "; "
-        for i, pair in enumerate(geom_pairs):
-            expr += _pairing_component_expr(i, pair[2])
-        expr += (
-            "cos_normal_psi=select(sin(D2D1A1)*sin(D1A1A2), cos_normal_psi_full, cos_normal_psi_partial); "
-            "cos_normal_psi_full=sin(D2D1A1)*sin(D1A1A2)*cos(D2D1A1A2)-cos(D2D1A1)*cos(D1A1A2); "
-            "cos_normal_psi_partial=-cos(D2D1A1)*cos(D1A1A2); "
-            "D2D1A1=angle(d2, d1, a1); D1A1A2=angle(d1, a1, a2); D2D1A1A2=dihedral(d2, d1, a1, a2); "
-            "D3D1D2A1=select(sin(D1D2A1), dihedral(d3, d1, d2, a1), 0); "
-            "A3A1A2D1=select(sin(A1A2D1), dihedral(a3, a1, a2, d1), 0); "
-            "D1D2A1=angle(d1, d2, a1); A1A2D1=angle(a1, a2, d1); "
-            f"is_excluded=step({n_exclude_pairing}-abs(a_id-d_id))*delta(a_chainid-d_chainid);"
+        rows_by_donor: dict[str, dict[str, list[tuple[int, str, np.ndarray]]]] = defaultdict(
+            lambda: defaultdict(list)
         )
-        force = mm.CustomHbondForce(expr)
-        for parameter in ["a_type", "a_id", "a_chainid"]:
-            force.addPerAcceptorParameter(parameter)
-        for parameter in ["d_type", "d_id", "d_chainid"]:
-            force.addPerDonorParameter(parameter)
-        force.setCutoffDistance(0.8 * unit.nanometer)
-        force.setNonbondedMethod(force.CutoffPeriodic if periodic else force.CutoffNonPeriodic)
-        for i, row in enumerate(para):
-            names = ["Up", "r0_", "dr0_", "theta0_", "dtheta0_", "psi0_", "phi1_", "dphi1_", "phi2_", "dphi2_", "r_sens", "theta_sens", "phi_sens"]
-            for name, value in zip(names, row):
-                force.addGlobalParameter(f"{name}{i}", float(value))
-        for i, (cog, normal) in enumerate(data.virtual_site_summaries):
-            cog_idx, restype, resid, chainid, _, b1_idx = cog
-            normal_idx = normal[0]
-            values = [RESTYPE_TO_INDEX[restype], resid, chainid]
-            force.addDonor(cog_idx, normal_idx, b1_idx, values)
-            force.addAcceptor(cog_idx, normal_idx, b1_idx, values)
-            force.addExclusion(i, i)
+        for i, pair in enumerate(geom_pairs):
+            rows_by_donor[pair[0]][pair[3]].append((i, pair[2], para[i]))
+
+        # Choose the representation once while constructing the System. The
+        # compound path exposes candidate pairs as parallel work, while the
+        # H-bond path supplies a scalable neighbor list. Enumeration stops at
+        # limit+1, and a one-channel/one-slot case stays on H-bond because it
+        # has no launch-fusion benefit. This choice never changes during MD.
+        compound_bonds = _pairing_compound_bonds(
+            data,
+            rows_by_donor,
+            n_exclude_pairing,
+            max_bonds=_PAIRING_COMPOUND_MAX_BONDS,
+        )
+        active_type_pairs = {
+            type_pair for _, type_pair in compound_bonds
+        }
+        active_donor_types = {
+            donor_type for donor_type, _ in active_type_pairs
+        }
+        max_active_slots = max(
+            (
+                len(rows_by_donor[donor_type][acceptor_type])
+                for donor_type, acceptor_type in active_type_pairs
+            ),
+            default=0,
+        )
+        use_compound = (
+            len(compound_bonds) <= _PAIRING_COMPOUND_MAX_BONDS
+            and (
+                len(active_donor_types) > 1
+                or max_active_slots > 1
+            )
+        )
+        if use_compound:
+            self._add_compound_pairing(
+                system, rows_by_donor, compound_bonds, periodic=periodic
+            )
+            return
+
+        self._add_hbond_pairing(
+            system,
+            data,
+            rows_by_donor,
+            n_exclude_pairing,
+            periodic=periodic,
+        )
+
+    def _add_compound_pairing(
+        self,
+        system: mm.System,
+        rows_by_donor,
+        compound_bonds,
+        *,
+        periodic: bool,
+    ) -> None:
+        active_type_pairs = {
+            type_pair for _, type_pair in compound_bonds
+        }
+        slot_count = max(
+            len(rows_by_donor[donor_type][acceptor_type])
+            for donor_type, acceptor_type in active_type_pairs
+        )
+        parameter_prefix = "pairing_compound"
+        force = mm.CustomCompoundBondForce(
+            6,
+            _donor_packed_pairing_expr(
+                slot_count,
+                parameter_prefix,
+                particle_names=("p1", "p2", "p3", "p4", "p5", "p6"),
+                cutoff_nm=_PAIRING_CUTOFF_NM,
+            ),
+        )
+        parameter_names = (*_PACKED_PAIRING_PARAMETER_NAMES, "psi_sign")
+        for slot in range(slot_count):
+            for name in parameter_names:
+                force.addPerBondParameter(
+                    _pairing_parameter_name(name, slot, parameter_prefix)
+                )
+
+        zero_parameters = _packed_pairing_parameters(np.zeros(13))
+        values_by_pair = {}
+        for donor_type, rows_by_acceptor in rows_by_donor.items():
+            for acceptor_type, raw_rows in rows_by_acceptor.items():
+                if (donor_type, acceptor_type) not in active_type_pairs:
+                    continue
+                rows = [
+                    (orientation, _packed_pairing_parameters(row))
+                    for _, orientation, row in raw_rows
+                ]
+                values_by_pair[(donor_type, acceptor_type)] = [
+                    float(
+                        _pairing_slot_parameter(
+                            rows, slot, name, zero_parameters
+                        )
+                    )
+                    for slot in range(slot_count)
+                    for name in parameter_names
+                ]
+
+        for particle_indices, type_pair in compound_bonds:
+            force.addBond(particle_indices, values_by_pair[type_pair])
+        force.setUsesPeriodicBoundaryConditions(periodic)
         force.setForceGroup(FORCE_GROUP_IDS["pairing"])
         force.setName("pairing")
         system.addForce(force)
+
+    def _add_hbond_pairing(
+        self,
+        system: mm.System,
+        data: _TopologyData,
+        rows_by_donor,
+        n_exclude_pairing: int,
+        *,
+        periodic: bool,
+    ) -> None:
+        added_force = False
+        for donor_type_index, (d_type, rows_by_acceptor) in enumerate(rows_by_donor.items()):
+            donor_residues = [entry for entry in data.virtual_site_summaries if entry[0][1] == d_type]
+            acceptor_types = set(rows_by_acceptor)
+            acceptor_residues = [
+                entry for entry in data.virtual_site_summaries if entry[0][1] in acceptor_types
+            ]
+            if not donor_residues or not acceptor_residues:
+                continue
+
+            slot_count = max(len(rows) for rows in rows_by_acceptor.values())
+            parameter_prefix = f"pairing_d{donor_type_index}"
+            force = mm.CustomHbondForce(
+                _donor_packed_pairing_expr(slot_count, parameter_prefix)
+            )
+            force.setCutoffDistance(_PAIRING_CUTOFF_NM * unit.nanometer)
+            force.setNonbondedMethod(force.CutoffPeriodic if periodic else force.CutoffNonPeriodic)
+
+            packed_rows = {
+                restype: [
+                    (orientation, _packed_pairing_parameters(row))
+                    for _, orientation, row in rows
+                ]
+                for restype, rows in rows_by_acceptor.items()
+            }
+            zero_parameters = _packed_pairing_parameters(np.zeros(13))
+            for slot in range(slot_count):
+                for name in (*_PACKED_PAIRING_PARAMETER_NAMES, "psi_sign"):
+                    force.addPerAcceptorParameter(
+                        _pairing_parameter_name(name, slot, parameter_prefix)
+                    )
+
+            donor_metadata: list[tuple[int, int]] = []
+            acceptor_metadata: list[tuple[int, int]] = []
+            for cog, normal in donor_residues:
+                cog_idx, _, resid, chainid, _, b1_idx = cog
+                force.addDonor(cog_idx, normal[0], b1_idx, [])
+                donor_metadata.append((chainid, resid))
+            for cog, normal in acceptor_residues:
+                cog_idx, restype, resid, chainid, _, b1_idx = cog
+                rows = packed_rows.get(restype, ())
+                acceptor_parameters = []
+                for slot in range(slot_count):
+                    for name in (*_PACKED_PAIRING_PARAMETER_NAMES, "psi_sign"):
+                        value = _pairing_slot_parameter(
+                            rows, slot, name, zero_parameters
+                        )
+                        acceptor_parameters.append(float(value))
+                force.addAcceptor(
+                    cog_idx, normal[0], b1_idx, acceptor_parameters
+                )
+                acceptor_metadata.append((chainid, resid))
+            for donor_index, (donor_chainid, donor_resid) in enumerate(donor_metadata):
+                for acceptor_index, (acceptor_chainid, acceptor_resid) in enumerate(acceptor_metadata):
+                    if donor_chainid == acceptor_chainid and abs(acceptor_resid - donor_resid) <= n_exclude_pairing:
+                        force.addExclusion(donor_index, acceptor_index)
+
+            force.setForceGroup(FORCE_GROUP_IDS["pairing"])
+            force.setName("pairing")
+            system.addForce(force)
+            added_force = True
+
+        if not added_force:
+            force = mm.CustomHbondForce("0")
+            force.setCutoffDistance(_PAIRING_CUTOFF_NM * unit.nanometer)
+            force.setNonbondedMethod(force.CutoffPeriodic if periodic else force.CutoffNonPeriodic)
+            force.setForceGroup(FORCE_GROUP_IDS["pairing"])
+            force.setName("pairing")
+            system.addForce(force)
 
 
 def _dof_with_postfix(name: str) -> str:
@@ -688,6 +899,29 @@ def _angle_descriptor_index(angle: str, dof_to_index: dict[str, int]) -> int | N
         return dof_to_index[angle]
     reversed_angle = "-".join(angle.split("-")[::-1])
     return dof_to_index.get(reversed_angle)
+
+
+def _legacy_compatible_spline_tables(
+    y_nodes: np.ndarray, x_lim: np.ndarray, base_idx_lim: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Pack spline tables while preserving legacy duplicate-name resolution."""
+
+    effective_y = np.array(y_nodes, copy=True)
+    effective_x = np.array(x_lim, copy=True)
+    active_pairs = [
+        (i, j)
+        for i, j in product(range(y_nodes.shape[0]), range(y_nodes.shape[1]))
+        if i < base_idx_lim or j < base_idx_lim
+    ]
+
+    # Legacy names omitted a separator: U110 means both (1, 10) and (11, 0).
+    # OpenMM resolved references to the last table registered under each name.
+    source_by_name = {f"U{i}{j}": (i, j) for i, j in active_pairs}
+    for i, j in active_pairs:
+        source_i, source_j = source_by_name[f"U{i}{j}"]
+        effective_y[i, j] = y_nodes[source_i, source_j]
+        effective_x[i, j] = x_lim[source_i, source_j]
+    return effective_y, effective_x
 
 
 def _load_parameters(path: Path) -> dict[str, object]:
@@ -780,14 +1014,186 @@ def _as_quantity(value, target_unit):
     return value * target_unit
 
 
-def _pairing_component_expr(index: int, orientation: str) -> str:
-    expr = (
-        f"fr{index}=1/2*(tanh(r_sens{index}*(abs(distance(d1, a1)-r0_{index})-dr0_{index}))-1); "
-        f"g1_{index}=1/2*(tanh(theta_sens{index}*(cos(abs(D2D1A1-theta0_{index}))-cos(dtheta0_{index})))+1); "
-        f"g2_{index}=1/2*(tanh(theta_sens{index}*(cos(abs(D1A1A2-theta0_{index}))-cos(dtheta0_{index})))+1); "
-        f"g3_{index}=1/2*(tanh(phi_sens{index}*(cos(abs(D3D1D2A1-phi1_{index}))-cos(dphi1_{index})))+1); "
-        f"g4_{index}=1/2*(tanh(phi_sens{index}*(cos(abs(A3A1A2D1-phi2_{index}))-cos(dphi2_{index})))+1); "
+def _stacking_component_expression(
+    stacking_type: str,
+) -> tuple[str, str]:
+    if stacking_type == "35":
+        g1_sign, g2_sign, g3_sign = "-", "", ""
+    elif stacking_type == "55":
+        g1_sign, g2_sign, g3_sign = "", "", "-"
+    else:
+        g1_sign, g2_sign, g3_sign = "-", "-", "-"
+    prefix = f"s{stacking_type}"
+    energy = (
+        f"stacking{stacking_type}_scale*"
+        f"{prefix}_U0_mat(d_type,a_type)*{prefix}_fr*"
+        f"{prefix}_g1*{prefix}_g2*{prefix}_g3"
     )
-    if orientation == "+":
-        return expr + f"h{index}=1/2*(tanh(theta_sens{index}*(cos_normal_psi-cos(psi0_{index})))+1); "
-    return expr + f"h{index}=1/2*(tanh(theta_sens{index}*(-cos_normal_psi-cos(psi0_{index})))+1); "
+    definitions = (
+        f"{prefix}_fr=0.5*(tanh({prefix}_r_sens*"
+        f"(abs(r-{prefix}_r0)-{prefix}_dr0))-1);"
+        f"{prefix}_g1=0.5*(tanh({prefix}_theta_sens*"
+        f"({g1_sign}cos(D2D1A1)-{prefix}_ctheta0))+1);"
+        f"{prefix}_g2=0.5*(tanh({prefix}_theta_sens*"
+        f"({g2_sign}cos(D1A1A2)-{prefix}_ctheta0))+1);"
+        f"{prefix}_g3=0.5*(tanh({prefix}_theta_sens*"
+        f"({g3_sign}cos_normal_psi-{prefix}_cpsi0))+1);"
+        f"{prefix}_r0={prefix}_r0_mat(a_type,d_type);"
+        f"{prefix}_dr0={prefix}_dr0_mat(a_type,d_type);"
+        f"{prefix}_ctheta0={prefix}_ctheta0_mat(a_type,d_type);"
+        f"{prefix}_cpsi0={prefix}_cpsi0_mat(a_type,d_type);"
+        f"{prefix}_r_sens={prefix}_r_sens_mat(a_type,d_type);"
+        f"{prefix}_theta_sens={prefix}_theta_sens_mat(a_type,d_type);"
+    )
+    return energy, definitions
+
+
+def _normal_cosine_expression(
+    d1: str = "d1",
+    d2: str = "d2",
+    a1: str = "a1",
+    a2: str = "a2",
+) -> str:
+    return (
+        f"(distance({d2},{a1})^2+distance({d1},{a2})^2"
+        f"-distance({d2},{a2})^2-distance({d1},{a1})^2)"
+        f"/(2*distance({d1},{d2})*distance({a1},{a2}))"
+    )
+
+
+_PACKED_PAIRING_PARAMETER_NAMES = (
+    "Up",
+    "r0",
+    "dr0",
+    "theta0",
+    "dtheta0",
+    "psi0",
+    "phi1",
+    "dphi1",
+    "phi2",
+    "dphi2",
+    "r_sens",
+    "theta_sens",
+    "phi_sens",
+)
+
+
+def _packed_pairing_parameters(row: np.ndarray) -> dict[str, float]:
+    return {
+        name: float(value)
+        for name, value in zip(_PACKED_PAIRING_PARAMETER_NAMES, row)
+    }
+
+
+def _pairing_slot_parameter(rows, slot, name, zero_parameters):
+    if slot >= len(rows):
+        return 1.0 if name == "psi_sign" else zero_parameters[name]
+    orientation, parameters = rows[slot]
+    if name == "psi_sign":
+        return 1.0 if orientation == "+" else -1.0
+    return parameters[name]
+
+
+def _pairing_compound_bonds(
+    data, rows_by_donor, n_exclude_pairing, *, max_bonds
+):
+    residues_by_type = {
+        restype: [
+            entry
+            for entry in data.virtual_site_summaries
+            if entry[0][1] == restype
+        ]
+        for restype in RESTYPE_TO_INDEX
+    }
+    bonds = []
+    for donor_type, rows_by_acceptor in rows_by_donor.items():
+        for acceptor_type in rows_by_acceptor:
+            for donor_cog, donor_normal in residues_by_type[donor_type]:
+                d_cog, _, d_residue, d_chain, _, d_b1 = donor_cog
+                for acceptor_cog, acceptor_normal in residues_by_type[
+                    acceptor_type
+                ]:
+                    a_cog, _, a_residue, a_chain, _, a_b1 = acceptor_cog
+                    if (
+                        d_chain == a_chain
+                        and abs(a_residue - d_residue)
+                        <= n_exclude_pairing
+                    ):
+                        continue
+                    bonds.append(
+                        (
+                            (
+                                d_cog,
+                                donor_normal[0],
+                                d_b1,
+                                a_cog,
+                                acceptor_normal[0],
+                                a_b1,
+                            ),
+                            (donor_type, acceptor_type),
+                        )
+                    )
+                    if len(bonds) > max_bonds:
+                        return bonds
+    return bonds
+
+
+def _donor_packed_pairing_expr(
+    slot_count: int,
+    parameter_prefix: str,
+    *,
+    particle_names=("d1", "d2", "d3", "a1", "a2", "a3"),
+    cutoff_nm: float | None = None,
+) -> str:
+    energy_terms = []
+    component_terms = []
+
+    for slot in range(slot_count):
+        def parameter(name: str) -> str:
+            return _pairing_parameter_name(name, slot, parameter_prefix)
+        energy_terms.append(
+            f"{parameter('Up')}*fr{slot}*g1_{slot}*g2_{slot}*"
+            f"g3_{slot}*g4_{slot}*h{slot}"
+        )
+        component_terms.append(
+            f"fr{slot}=0.5*(tanh({parameter('r_sens')}*"
+            f"(abs(r-{parameter('r0')})-{parameter('dr0')}))-1); "
+            f"g1_{slot}=0.5*(tanh({parameter('theta_sens')}*"
+            f"(cos(D2D1A1-{parameter('theta0')})-"
+            f"cos({parameter('dtheta0')})))+1); "
+            f"g2_{slot}=0.5*(tanh({parameter('theta_sens')}*"
+            f"(cos(D1A1A2-{parameter('theta0')})-"
+            f"cos({parameter('dtheta0')})))+1); "
+            f"g3_{slot}=0.5*(tanh({parameter('phi_sens')}*"
+            f"(cos(D3D1D2A1-{parameter('phi1')})-"
+            f"cos({parameter('dphi1')})))+1); "
+            f"g4_{slot}=0.5*(tanh({parameter('phi_sens')}*"
+            f"(cos(A3A1A2D1-{parameter('phi2')})-"
+            f"cos({parameter('dphi2')})))+1); "
+            f"h{slot}=0.5*(tanh({parameter('theta_sens')}*"
+            f"({parameter('psi_sign')}*cos_normal_psi-"
+            f"cos({parameter('psi0')})))+1); "
+        )
+    energy = "+".join(energy_terms)
+    if cutoff_nm is not None:
+        energy = f"step({cutoff_nm}-r)*({energy})"
+    d1, d2, d3, a1, a2, a3 = particle_names
+    return (
+        energy
+        + "; "
+        + "".join(component_terms)
+        + f"cos_normal_psi={_normal_cosine_expression(d1, d2, a1, a2)}; "
+        + f"r=distance({d1},{a1}); "
+        + f"D2D1A1=angle({d2},{d1},{a1}); "
+        + f"D1A1A2=angle({d1},{a1},{a2}); "
+        + "D3D1D2A1=select(sin(D1D2A1),"
+        + f"dihedral({d3},{d1},{d2},{a1}),0); "
+        + "A3A1A2D1=select(sin(A1A2D1),"
+        + f"dihedral({a3},{a1},{a2},{d1}),0); "
+        + f"D1D2A1=angle({d1},{d2},{a1}); "
+        + f"A1A2D1=angle({a1},{a2},{d1}); "
+    )
+
+
+def _pairing_parameter_name(name: str, index: int, parameter_prefix: str) -> str:
+    return f"{parameter_prefix}_{name}{index}" if parameter_prefix else f"{name}{index}"

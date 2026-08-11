@@ -39,9 +39,16 @@ def test_create_system_periodic_switches_legacy_pbc_forces():
         assert _force_by_name(nonperiodic, name).getNonbondedMethod() == _force_by_name(nonperiodic, name).CutoffNonPeriodic
         assert _force_by_name(periodic, name).getNonbondedMethod() == _force_by_name(periodic, name).CutoffPeriodic
 
-    for name in ["stacking35", "stacking55", "stacking33", "pairing"]:
+    for name in ["stacking"]:
         assert _force_by_name(nonperiodic, name).getNonbondedMethod() == _force_by_name(nonperiodic, name).CutoffNonPeriodic
         assert _force_by_name(periodic, name).getNonbondedMethod() == _force_by_name(periodic, name).CutoffPeriodic
+
+    assert not _force_by_name(
+        nonperiodic, "pairing"
+    ).usesPeriodicBoundaryConditions()
+    assert _force_by_name(
+        periodic, "pairing"
+    ).usesPeriodicBoundaryConditions()
 
     assert all(not force.usesPeriodicBoundaryConditions() for force in _forces_by_name(nonperiodic, "pucker"))
     assert all(force.usesPeriodicBoundaryConditions() for force in _forces_by_name(periodic, "pucker"))
@@ -78,6 +85,24 @@ def test_periodic_box_cutoff_validation_rejects_too_small_box():
         box_padding=2 * unit.nanometer,
     )
     with pytest.raises(ValueError, match="Periodic box is too small.*electrostatic.*box-padding"):
+        validate_periodic_box_cutoffs(system)
+
+
+def test_periodic_box_validation_includes_compound_pairing_cutoff():
+    pdb = app.PDBFile(str(data_path("examples/1l2x_cg_vs_conect.pdb")))
+    system = CranberryForceField().createSystem(
+        pdb.topology,
+        positions=pdb.positions,
+        periodic=True,
+        enabled_forces=["pairing"],
+    )
+    system.setDefaultPeriodicBoxVectors(
+        (1, 0, 0) * unit.nanometer,
+        (0, 1, 0) * unit.nanometer,
+        (0, 0, 1) * unit.nanometer,
+    )
+
+    with pytest.raises(ValueError, match="pairing.*0.8 nm"):
         validate_periodic_box_cutoffs(system)
 
 
@@ -162,6 +187,10 @@ def test_run_md_writes_default_outputs(tmp_path):
 
     detailed = result.detailed_log_path.read_text().splitlines()
     assert detailed[0].startswith('#"Step","Time (ps)","Potential Energy (kJ/mole)","bond (kJ/mole)"')
+    assert all(
+        f'"{name} (kJ/mole)"' in detailed[0]
+        for name in ("stacking35", "stacking55", "stacking33")
+    )
     assert len(detailed) == 2
     validate_canonical_pdb(result.final_pdb_path).raise_for_errors()
 
@@ -214,6 +243,15 @@ def test_run_md_writes_minimization_report(tmp_path):
     assert "after_kj_per_mol" in report
     assert "force_groups_before_kj_per_mol" in report
     assert "force_groups_after_kj_per_mol" in report
+    for key in (
+        "force_groups_before_kj_per_mol",
+        "force_groups_after_kj_per_mol",
+    ):
+        assert {
+            "stacking35",
+            "stacking55",
+            "stacking33",
+        } <= report[key].keys()
 
 def test_run_md_archives_distinct_args_only(tmp_path):
     pdb = data_path("examples/2ntCG_cg_vs_conect.pdb")
