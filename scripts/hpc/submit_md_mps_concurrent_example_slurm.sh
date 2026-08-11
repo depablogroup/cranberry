@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Example Slurm submitter for packing independent Cranberry MD runs onto one GPU.
+# Example Slurm submitter for running independent Cranberry MD jobs concurrently on one GPU.
 #
 # Minimal usage:
-#   scripts/hpc/submit_md_mps_pack_example_slurm.sh \
+#   scripts/hpc/submit_md_mps_concurrent_example_slurm.sh \
 #       --pdb /path/a_cg_vs_conect.pdb \
 #       --pdb /path/b_cg_vs_conect.pdb \
 #       --steps 100000 \
 #       --platform CUDA \
-#       --output-root runs/md-pack \
+#       --output-root runs/md-concurrent \
 #       --account my_account \
 #       --partition gpu
 
@@ -19,7 +19,7 @@ repo_root="${CRANBERRY_REPO_ROOT:-$(cd "$script_dir/../.." && pwd)}"
 
 PDB_PATHS="${PDB_PATHS:-}"
 RUN_NAMES="${RUN_NAMES:-}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-$repo_root/runs/md-pack}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-$repo_root/runs/md-concurrent}"
 STEPS="${STEPS:-${TARGET_STEPS:-}}"
 N_RECORD="${N_RECORD:-}"
 MODEL="${MODEL:-default}"
@@ -31,7 +31,7 @@ USE_MPS="${USE_MPS:-1}"
 PERIODIC="${PERIODIC:-0}"
 BOX_PADDING="${BOX_PADDING:-3.0}"
 
-JOB_NAME="${JOB_NAME:-cranberry_md_pack}"
+JOB_NAME="${JOB_NAME:-cranberry_md_concurrent}"
 ACCOUNT="${ACCOUNT:-}"
 PARTITION="${PARTITION:-}"
 CONSTRAINT="${CONSTRAINT:-}"
@@ -48,10 +48,11 @@ CRANBERRY_BIN="${CRANBERRY_BIN:-cranberry}"
 
 usage() {
     cat <<'EOF'
-usage: submit_md_mps_pack_example_slurm.sh [OPTIONS]
+usage: submit_md_mps_concurrent_example_slurm.sh [OPTIONS]
 
-Submit one Slurm job that runs multiple independent `cranberry md` commands on
-one GPU. CUDA MPS is started inside the allocation when available.
+Submit one Slurm job that runs multiple independent `cranberry md` commands
+concurrently on one GPU. CUDA MPS is started inside the allocation when
+available.
 
 Run selection:
   --pdb PATH             Add one canonical CRANBERRY CG PDB. Repeat for multiple runs.
@@ -347,7 +348,7 @@ run_name_for_index() {
     echo "${name//[^A-Za-z0-9_.-]/_}"
 }
 
-run_packed_md() {
+run_concurrent_md() {
     mkdir -p "$OUTPUT_ROOT"
     prepare_python_env
     start_mps
@@ -421,4 +422,4 @@ if [ -z "${SLURM_JOB_ID:-}" ]; then
 fi
 
 cd "$repo_root"
-run_packed_md
+run_concurrent_md

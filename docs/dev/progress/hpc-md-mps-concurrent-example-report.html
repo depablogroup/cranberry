@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>HPC MD MPS Pack Example Report</title>
+  <title>HPC MD MPS Concurrent Example Report</title>
   <style>
     body { font-family: system-ui, sans-serif; line-height: 1.5; max-width: 980px; margin: 2rem auto; padding: 0 1rem; }
     code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
@@ -11,12 +11,12 @@
   </style>
 </head>
 <body>
-  <h1>HPC MD MPS Pack Example Report</h1>
+  <h1>HPC MD MPS Concurrent Example Report</h1>
 
   <h2>Scope</h2>
   <p>
-    This change adds a generic Slurm example for packing multiple independent
-    <code>cranberry md</code> runs onto one allocated GPU with CUDA MPS. The
+    This change adds a generic Slurm example for running multiple independent
+    <code>cranberry md</code> jobs concurrently on one allocated GPU with CUDA MPS. The
     submitter accepts CLI-style options such as repeated <code>--pdb</code>,
     <code>--steps</code>, <code>--platform</code>, and
     <code>--output-root</code>, then launches one plain
@@ -40,12 +40,12 @@
 
   <h2>Files Changed</h2>
   <ul>
-    <li><code>scripts/hpc/submit_md_mps_pack_example_slurm.sh</code>: new generic Slurm example submitter.</li>
-    <li><code>docs/tutorials/packed-md-hpc.md</code>: new public prepare-and-run packed MD tutorial.</li>
-    <li><code>docs/index.md</code>: added the packed MD tutorial to the public docs toctree.</li>
+    <li><code>scripts/hpc/submit_md_mps_concurrent_example_slurm.sh</code>: new generic Slurm example submitter.</li>
+    <li><code>docs/tutorials/concurrent-md-hpc.md</code>: new public prepare-and-run concurrent MD tutorial.</li>
+    <li><code>docs/index.md</code>: added the concurrent MD tutorial to the public docs toctree.</li>
     <li><code>tests/test_hpc_scripts.py</code>: new lightweight regression tests for shell syntax and dry-run submission wiring.</li>
     <li><code>__init__.py</code>: guard the root package shim when pytest imports it as a standalone module during collection from a clean checkout.</li>
-    <li><code>docs/dev/progress/hpc-md-mps-pack-example-report.html</code>: this report.</li>
+    <li><code>docs/dev/progress/hpc-md-mps-concurrent-example-report.html</code>: this report.</li>
   </ul>
 
   <h2>Key Script Path</h2>
@@ -55,12 +55,12 @@
     itself. Inside Slurm it prepares the Python environment, starts CUDA MPS
     when available, and launches <code>cranberry md</code> directly for each PDB.
   </p>
-  <pre><code>scripts/hpc/submit_md_mps_pack_example_slurm.sh \
+  <pre><code>scripts/hpc/submit_md_mps_concurrent_example_slurm.sh \
   --pdb /path/a_cg_vs_conect.pdb \
   --pdb /path/b_cg_vs_conect.pdb \
   --steps 500000 \
   --platform CUDA \
-  --output-root runs/md_pack_example
+  --output-root runs/md_concurrent_example
 
 if [ -z "${SLURM_JOB_ID:-}" ]; then
     echo "Submitting $JOB_NAME to Slurm"
@@ -82,43 +82,41 @@ cmd=(
   <h2>Regression Coverage</h2>
   <p>
     The new test file intentionally avoids GPUs, Slurm, and CUDA. It verifies
-    that the packed-MD example parses with <code>bash -n</code>, then runs the
+    that the concurrent-MD example parses with <code>bash -n</code>, then runs the
     generic submitter with <code>--dry-run</code> and packaged example PDBs to
     ensure the CLI-style path generates an <code>sbatch</code> command with the
     expected scheduler arguments.
   </p>
-  <pre><code>def test_md_mps_pack_example_slurm_parses_with_bash() -&gt; None:
-    result = subprocess.run(["bash", "-n", str(PACKED_MD_SCRIPT)], ...)
+  <pre><code>def test_md_mps_concurrent_example_slurm_parses_with_bash() -&gt; None:
+    result = subprocess.run(["bash", "-n", str(CONCURRENT_MD_SCRIPT)], ...)
     assert result.returncode == 0
 
-def test_md_mps_pack_example_slurm_dry_run(tmp_path: Path) -&gt; None:
+def test_md_mps_concurrent_example_slurm_dry_run(tmp_path: Path) -&gt; None:
     result = subprocess.run([str(script), "--dry-run", "--pdb", str(pdb_a), ...], ...)
     assert "dry-run sbatch:" in result.stdout
     assert "--gres=gpu:1" in result.stdout
 
-def test_md_mps_pack_example_slurm_runs_md_directly() -&gt; None:
+def test_md_mps_concurrent_example_slurm_runs_md_directly() -&gt; None:
     assert '"$CRANBERRY_BIN" md "$pdb_path"' in script_text
-    assert "run_cranberry_md_mps_pack.sh" not in script_text</code></pre>
+    assert "CRANBERRY_MD_HELPER" not in script_text</code></pre>
 
   <h2>Validation</h2>
   <pre><code>$ conda run -n cranberry-dev python -m pytest -q tests/test_hpc_scripts.py
 ...                                                                      [100%]
-3 passed in 4.76s
+3 passed in 4.40s
 
 $ git diff --check
-# no output</code></pre>
+# no output
 
-  <p>
-    The public documentation should also be checked with:
-  </p>
-  <pre><code>$ conda run -n cranberry-dev sphinx-build -b html docs docs/_build/html</code></pre>
+$ conda run -n cranberry-dev sphinx-build -b html docs docs/_build/html
+build succeeded.</code></pre>
 
   <h2>Risks And Follow-Up</h2>
   <ul>
     <li>The example is not a real Slurm/CUDA integration test; it checks the portable dry-run path only.</li>
     <li>Cluster-specific resource choices still need local tuning for CPU count, memory, walltime, partition, and account.</li>
     <li>The example intentionally has no automatic timeout/resubmission policy; production wrappers can add that after site validation.</li>
-    <li>GPU utilization improvements should be measured per system with <code>nvidia-smi</code>, per-run logs, and wall-clock throughput before increasing the number of PDBs packed into one allocation.</li>
+    <li>GPU utilization improvements should be measured per system with <code>nvidia-smi</code>, per-run logs, and wall-clock throughput before increasing the number of PDBs launched concurrently in one allocation.</li>
   </ul>
 </body>
 </html>
