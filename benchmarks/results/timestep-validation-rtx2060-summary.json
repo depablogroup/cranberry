@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "study": "cranberry-timestep-validation",
+  "platform": {
+    "gpu": "NVIDIA GeForce RTX 2060",
+    "openmm_version": "8.5.2",
+    "platform": "CUDA",
+    "precision": "mixed"
+  },
+  "recommendation_status": "nve-superseded-by-long-run",
+  "candidates": {
+    "dt_nve_femtosecond": null,
+    "dt_nvt_femtosecond": 8.0
+  },
+  "operational_default_femtosecond": 5.0,
+  "decision_basis": "NVE recommendation withdrawn after long-run failures; NVT retained from local-coordinate distributions versus 1 fs and 1 us survival.",
+  "nve_confirmation": {
+    "systems": ["2ntCG", "1l2x", "rU40"],
+    "temperatures_kelvin": [298.0, 420.0],
+    "seeds": [20260809, 20260810, 20260811],
+    "production_picosecond": 200.0,
+    "runs_per_timestep": 18,
+    "rows": [
+      {
+        "timestep_femtosecond": 1.0,
+        "median_absolute_drift_kbt_per_dof_per_ns": 0.00256,
+        "p90_absolute_drift_kbt_per_dof_per_ns": 0.01057,
+        "maximum_absolute_drift_kbt_per_dof_per_ns": 0.01169,
+        "median_rms_fluctuation_kbt_per_dof": 0.001132
+      },
+      {
+        "timestep_femtosecond": 3.0,
+        "median_absolute_drift_kbt_per_dof_per_ns": 0.01173,
+        "p90_absolute_drift_kbt_per_dof_per_ns": 0.03205,
+        "maximum_absolute_drift_kbt_per_dof_per_ns": 0.05366,
+        "median_rms_fluctuation_kbt_per_dof": 0.001477
+      },
+      {
+        "timestep_femtosecond": 5.0,
+        "median_absolute_drift_kbt_per_dof_per_ns": 0.01612,
+        "p90_absolute_drift_kbt_per_dof_per_ns": 0.03568,
+        "maximum_absolute_drift_kbt_per_dof_per_ns": 0.05361,
+        "median_rms_fluctuation_kbt_per_dof": 0.002084
+      },
+      {
+        "timestep_femtosecond": 8.0,
+        "median_absolute_drift_kbt_per_dof_per_ns": 0.04508,
+        "p90_absolute_drift_kbt_per_dof_per_ns": 0.12397,
+        "maximum_absolute_drift_kbt_per_dof_per_ns": 0.22737,
+        "median_rms_fluctuation_kbt_per_dof": 0.004036
+      }
+    ]
+  },
+  "nvt_confirmation": {
+    "system": "1l2x",
+    "temperatures_kelvin": [298.0, 420.0],
+    "seeds": [20260809, 20260810, 20260811],
+    "reference_timestep_femtosecond": 0.5,
+    "candidate_burnin_picosecond": 20.0,
+    "production_picosecond": 200.0,
+    "candidate_timesteps_femtosecond": [1.0, 5.0, 8.0, 12.0, 15.0],
+    "result": "No monotonic local-energy bias established a 5 fs boundary; global structural observables were dominated by metastable trajectory divergence."
+  },
+  "nvt_geometry_confirmation": {
+    "systems": ["2ntCG", "1zih"],
+    "temperatures_kelvin": [298.0, 420.0],
+    "seeds": [20260809, 20260810, 20260811],
+    "reference_timestep_femtosecond": 1.0,
+    "candidate_timesteps_femtosecond": [5.0, 8.0, 10.0, 12.0],
+    "candidate_burnin_picosecond": 100.0,
+    "production_picosecond": 300.0,
+    "sample_interval_picosecond": 0.2,
+    "runs": 60,
+    "method": "State-conditioned Wasserstein-1 distance normalized by reference standard deviation; leave-one-seed-out 1 fs disagreement is the noise floor.",
+    "dt8_p95_normalized_wasserstein_ranges": {
+      "p_s3": [0.05, 0.12],
+      "s2_b1": [0.13, 0.49],
+      "pucker_phase": [0.13, 0.26]
+    },
+    "reference_p95_normalized_wasserstein_ranges": {
+      "p_s3": [0.08, 0.14],
+      "s2_b1": [0.22, 0.36],
+      "pucker_phase": [0.14, 0.24]
+    },
+    "interpretation": "No monotonic local configurational bias distinguishes 8 fs from 1 fs replica uncertainty; raw pucker occupancy is not converged over 300 ps."
+  },
+  "ghmc_diagnostic": {
+    "systems": ["2ntCG", "1l2x", "rU40"],
+    "temperatures_kelvin": [298.0, 420.0],
+    "historical_nonstandard_screen_threshold": 0.95,
+    "interpretation": "Diagnostic only; GHMC acceptance is not a calibrated Langevin configurational-bias criterion.",
+    "rows": [
+      {"timestep_femtosecond": 1.0, "minimum_acceptance": 0.99588, "median_acceptance": 0.99800},
+      {"timestep_femtosecond": 3.0, "minimum_acceptance": 0.98428, "median_acceptance": 0.99118},
+      {"timestep_femtosecond": 5.0, "minimum_acceptance": 0.95960, "median_acceptance": 0.97880},
+      {"timestep_femtosecond": 8.0, "minimum_acceptance": 0.89088, "median_acceptance": 0.93072},
+      {"timestep_femtosecond": 10.0, "minimum_acceptance": 0.86440, "median_acceptance": 0.87620},
+      {"timestep_femtosecond": 12.0, "minimum_acceptance": 0.78119, "median_acceptance": 0.79990},
+      {"timestep_femtosecond": 15.0, "minimum_acceptance": 0.61285, "median_acceptance": 0.64076}
+    ]
+  }
+}

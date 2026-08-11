@@ -295,6 +295,7 @@ class CranberryForceField:
 
     def _add_bonds(self, system: mm.System, data: _TopologyData, sugar_indices: dict[str, list]) -> None:
         force = mm.HarmonicBondForce()
+        represented_edges = set()
         for i, j in data.bonds:
             idi, idj = data.residue_indices[i], data.residue_indices[j]
             nmi, nmj = data.atom_names[i], data.atom_names[j]
@@ -308,11 +309,18 @@ class CranberryForceField:
             if found is not None:
                 length, k = found[0]
                 if np.isinf(k):
+                    represented_edges.add(frozenset((i, j)))
                     system.addConstraint(i, j, float(length) * unit.nanometer)
                 else:
                     force.addBond(i, j, float(length), float(k))
+                    represented_edges.add(frozenset((i, j)))
             elif _find_parameter(self._params["sugar_bonded"], name, postfix) is not None:
                 sugar_indices["bond"].append((i, j))
+        # Custom bonded terms do not contribute molecule connectivity. Declare
+        # every remaining topology edge as zero-energy bond connectivity.
+        for i, j in data.bonds:
+            if frozenset((i, j)) not in represented_edges:
+                force.addBond(i, j, 0.0, 0.0)
         force.setForceGroup(FORCE_GROUP_IDS["bond"])
         force.setName("bond")
         system.addForce(force)
@@ -504,12 +512,14 @@ class CranberryForceField:
                     raise ValueError(f"Residue {residue.index} is missing P outside a 5-prime terminus")
         force.setForceGroup(FORCE_GROUP_IDS["pucker"])
         force.setName("pucker")
-        force.setUsesPeriodicBoundaryConditions(periodic)
+        # Pucker is a bonded internal coordinate.  Its participating atoms are
+        # connected in the ordinary bonded force above, so OpenMMTools images
+        # them as one molecule and this force must use ordinary displacements.
+        force.setUsesPeriodicBoundaryConditions(False)
         system.addForce(force)
         if terminal_force.getNumBonds() > 0:
             terminal_force.setForceGroup(FORCE_GROUP_IDS["pucker"])
             terminal_force.setName("pucker")
-            terminal_force.setUsesPeriodicBoundaryConditions(periodic)
             system.addForce(terminal_force)
 
     def _terminal_sugar_force(self, descriptors: list[str]) -> mm.CustomCompoundBondForce:

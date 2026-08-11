@@ -51,7 +51,7 @@ def test_create_system_periodic_switches_legacy_pbc_forces():
     ).usesPeriodicBoundaryConditions()
 
     assert all(not force.usesPeriodicBoundaryConditions() for force in _forces_by_name(nonperiodic, "pucker"))
-    assert all(force.usesPeriodicBoundaryConditions() for force in _forces_by_name(periodic, "pucker"))
+    assert all(not force.usesPeriodicBoundaryConditions() for force in _forces_by_name(periodic, "pucker"))
     assert not _force_by_name(periodic, "bond").usesPeriodicBoundaryConditions()
     assert not _force_by_name(periodic, "angle").usesPeriodicBoundaryConditions()
     assert not _force_by_name(periodic, "dihedral").usesPeriodicBoundaryConditions()

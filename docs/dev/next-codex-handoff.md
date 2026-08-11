@@ -120,3 +120,49 @@ This handoff is for a fresh Codex session. Re-read `AGENTS.md`, `docs/dev/progra
 - Latest committed-code validation before `813b0a5`: `conda run -n cranberry-dev python -m pytest -q tests/test_remd.py` passed with 12 tests in 111.23 s, then focused post-rebase `tests/test_remd.py::test_run_remd_and_translate_real_openmmtools` passed. Pre-commit also ran pytest and passed during commit. The newer uncommitted publication-readiness tree passes 77 tests; do not describe that result as a committed validation until the change set is committed.
 - After the profiling session, MPS was stopped with `echo quit | nvidia-cuda-mps-control`. Check `nvidia-smi` if a future session suspects stray GPU processes.
 - Do not claim the full melting workflow complete until double-stranded fixtures, sampler/box state, restart behavior, and DCD output semantics are tested together.
+
+
+## Timestep Validation Handoff (2026-08-11)
+
+### Operational State
+
+- Branch: `timestep-validation`. No timestep-validation process is running. The local CUDA queue was deliberately stopped before the workstation was disconnected.
+- Do not restart long trajectories locally without checking with the user; remaining microsecond studies are better suited to the cluster.
+- The former 5 fs NVE recommendation is withdrawn. No NVE timestep has passed 1 microsecond for 1l2x. Use 1 fs only as a provisional diagnostic timestep with explicit drift monitoring.
+- The 8 fs Langevin recommendation remains supported at 298 K by a completed 1 microsecond 1l2x run, prior multi-seed configurational comparisons against 1 fs, and constrained velocity/kinetic-energy checks.
+
+### Long NVE Results
+
+- 5 fs failed at 135.75 ns.
+- A corrected 3 fs run removed initial COM velocity and localized progressive heating at 293.999706 ns. Total energy had risen by 8812.03 kJ/mol and instantaneous kinetic temperature from about 307 K to 2630 K. The first physical bond excursion above 0.1 nm was residue 10 P-S3 at 293.067807 ns.
+- 2.75 fs became nonfinite between 420 and 421 ns. The result serializer originally rejected NaN; `benchmarks/nve_survival_bracket.py` now checks finiteness before recording.
+- 2.5 fs reached 60 ns without failure before the user stopped the run. It is not validated. 2.25, 2.0, 1.5, and 1.0 fs microsecond runs were not performed.
+- Detailed 3 fs output is local and ephemeral: `/tmp/cranberry-nve-adaptive-3fs/result.json`.
+
+### Failure Localization
+
+- The failure is secular numerical heating followed by distributed backbone-bond excursions, not an initial COM artifact or a single defective bond.
+- Five-nanosecond 1l2x drift slopes at 3 fs were: full +13.21, no-pucker -0.13, no-spline +5.87, no-pairing +6.13, no-WCA -2.66, and no-stacking +10.48 kJ/mol/ns. These alter the Hamiltonian and thermalized state, so treat them as localization evidence, not additive attribution.
+- C3-only in the six-particle compound force still drifted +11.61 kJ/mol/ns. An equivalent split into harmonic bonds/angles and CBT torsions drifted +14.91 kJ/mol/ns. Therefore C2/C3 switching and `CustomCompoundBondForce` itself are not the identified root cause.
+- The strongest sugar coordinate is S2-B1 with k=27000 kJ/mol/nm^2; ordinary P-S3 is about 32000. A short 2ntCG Reference decomposition also ranked S2-B1 above the remaining C3 angles/torsions.
+- The constrained mass-weighted Hessian gives a fastest period near 115 fs, so a period-only heuristic incorrectly predicts 3 fs should be easy. Nonlinear coupling and nonsmooth spline/pairing/WCA behavior also contribute. Exact term-by-term attribution remains incomplete.
+
+### Langevin Evidence
+
+- The completed 8 fs velocity figure and JSON are `docs/dev/progress/velocity-distribution-8fs.png` and `.json`. Correct DOF subtract explicit constraints and three COM degrees.
+- 1l2x standardized velocity statistics at 8 fs: std 1.0076, skew -0.0098, excess kurtosis 0.0350; kinetic `2K/RT` mean 463.06 versus chi-square mean 456 and variance 950.4 versus 912.
+- A Maxwell/chi-square check is necessary but insufficient. LFMiddle can maintain momentum statistics while configurational distributions are timestep-biased. Primary selection evidence is the existing state-conditioned Wasserstein comparison against 1 fs in `benchmarks/results/timestep-validation-rtx2060-summary.json`.
+- The attempted extended 5 ns, three-seed 298/420 K NVT and GHMC rerun did not execute after the original periodic-box harness error. The harness now prepares a 4 nm padded periodic system and passes a CUDA smoke test, but the long matrix was stopped.
+
+### PBC/OpenMMTools Fix
+
+- Custom bonded forces do not define OpenMM molecule connectivity. Cranberry now adds zero-energy HarmonicBondForce entries for topology edges otherwise represented only by custom sugar forces.
+- Pucker remains nonperiodic as a bonded internal-coordinate force. With complete connectivity, `enforcePeriodicBox=True` images the full RNA as one molecule and no longer changes pucker energy.
+- This was a Cranberry System-connectivity bug exposed by ordinary OpenMMTools state imaging, not an OpenMMTools replica-exchange bug.
+
+### Validation and Next Steps
+
+- Focused validation: `tests/test_timestep_study.py` passes 5 tests; the periodic pucker regression and MD periodic-force expectations are included. `git diff --check` passed before commit.
+- Corrected narrative: `docs/dev/timestep-validation.md`. It prominently supersedes the historical short-run 5 fs NVE conclusion.
+- On a cluster, first run matched pucker subterm ablations from a shared equilibrated state, then test whether constraining S2-B1 and P-S3 removes drift without unacceptable ensemble changes. Only after the Hamiltonian is settled should 1/1.5/2/2.25/2.5 fs be bracketed to 1 microsecond.
+- For Langevin, rerun the fixed 298/420 K multi-seed matrix and GHMC curve, then regenerate velocity figures across 1/5/8/10/12 fs. Do not use a universal 95% GHMC threshold.

@@ -102,6 +102,43 @@ def test_create_system_adds_named_forces():
     assert global_parameters == set(STACKING_SCALE_PARAMETERS.values())
 
 
+def test_periodic_pucker_is_invariant_to_base_site_imaging():
+    pdb = app.PDBFile(str(data_path("examples/1l2x_cg_vs_conect.pdb")))
+    system = CranberryForceField().createSystem(
+        pdb.topology,
+        positions=pdb.positions,
+        enabled_forces=["bond", "pucker"],
+        periodic=True,
+        box_padding=2.0 * unit.nanometer,
+    )
+    force = next(force for force in system.getForces() if force.getName() == "pucker")
+    assert not force.usesPeriodicBoundaryConditions()
+
+    context = mm.Context(
+        system,
+        mm.VerletIntegrator(1 * unit.femtosecond),
+        mm.Platform.getPlatformByName("Reference"),
+    )
+    positions_nm = np.asarray(pdb.positions.value_in_unit(unit.nanometer))
+    # Put the intact molecule across a box face. OpenMMTools then images
+    # disconnected base groups separately if the connectivity is missing.
+    shifted_positions = (positions_nm - np.array([1.1, 0.0, 0.0])) * unit.nanometer
+    context.setPositions(shifted_positions)
+    reference_energy = context.getState(getEnergy=True).getPotentialEnergy()
+
+    imaged_state = context.getState(getPositions=True, enforcePeriodicBox=True)
+    context.setPositions(imaged_state.getPositions())
+    imaged_energy = context.getState(getEnergy=True).getPotentialEnergy()
+
+    assert len(context.getMolecules()) == 1
+    assert len(context.getMolecules()[0]) == pdb.topology.getNumAtoms()
+
+    assert imaged_energy.value_in_unit(unit.kilojoule_per_mole) == pytest.approx(
+        reference_energy.value_in_unit(unit.kilojoule_per_mole), abs=1e-9
+    )
+    del context
+
+
 def test_pairing_uses_parallel_compound_pairs_for_small_systems():
     pdb = app.PDBFile(str(data_path("examples/1l2x_cg_vs_conect.pdb")))
     system = CranberryForceField().createSystem(
