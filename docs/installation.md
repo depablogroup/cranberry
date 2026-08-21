@@ -14,15 +14,17 @@ cd cranberry
 python -m pip install -e ".[dev]"
 ```
 
-For GPU development, install OpenMM with conda first, then install Cranberry. This keeps OpenMM's platform plugins under conda's dependency resolver instead of letting pip choose an OpenMM build during the editable install:
+For GPU development, install OpenMM with conda first, then install Cranberry. Pin `cuda-version=12` so conda resolves OpenMM's CUDA plugin against the CUDA 12 line; prefer a CUDA 12.9-compatible solve when one is available on your cluster, otherwise use the latest compatible CUDA 12.x OpenMM target. This keeps OpenMM's platform plugins under conda's dependency resolver instead of letting pip choose an OpenMM build during the editable install:
 
 ```bash
-conda create -n cranberry-dev -c conda-forge python=3.11 openmm
+conda create -n cranberry-dev -c conda-forge python=3.11 openmm cuda-version=12
 conda activate cranberry-dev
 git clone https://github.com/yihengwuKP/cranberry.git
 cd cranberry
 python -m pip install -e ".[dev]"
 ```
+
+This CUDA 12 pin is intentional for Cranberry even though OpenMM's installation guide documents more general CUDA-version selection. In the Cranberry target environment, fresh OpenMM/CUDA 13 installs passed `python -m openmm.testInstallation` but failed minimal real CUDA context creation with `CUDA_ERROR_UNSUPPORTED_PTX_VERSION`; the same checks passed with the CUDA 12 target.
 
 If you already cloned the repository, skip `git clone` and change into your existing checkout instead:
 
@@ -73,10 +75,10 @@ PY
 
 A CUDA-capable environment must include `CUDA` in that list. `nvidia-smi` and `which nvcc` are useful system checks, but they are not enough by themselves: Cranberry can only use CUDA if OpenMM's Python package has registered the CUDA platform plugin in the same environment.
 
-If the platform list only contains entries such as `Reference`, `CPU`, and `OpenCL`, recreate the environment with OpenMM installed by conda first:
+If the platform list only contains entries such as `Reference`, `CPU`, and `OpenCL`, recreate the environment with OpenMM installed by conda first and pinned to the CUDA 12 target:
 
 ```bash
-conda create -n cranberry-dev -c conda-forge python=3.11 openmm
+conda create -n cranberry-dev -c conda-forge python=3.11 openmm cuda-version=12
 conda activate cranberry-dev
 cd /absolute/path/to/your/cranberry
 python -m pip install -e ".[dev]"

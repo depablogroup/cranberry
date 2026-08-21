@@ -16,10 +16,10 @@ The package is currently an alpha release tied to the published CRANBERRY model 
 
 ## Installation
 
-The recommended installation is a GPU-capable conda environment. OpenMM's conda-forge package selects a CUDA build compatible with the available NVIDIA driver; you do not need to install a separate system CUDA toolkit. An up-to-date vendor driver is still required. See the [OpenMM installation guide](https://docs.openmm.org/latest/userguide/application/01_getting_started.html) for CUDA-version-specific options.
+The recommended installation is a GPU-capable conda environment with OpenMM's CUDA 12 target. Pin `cuda-version=12` when creating the environment so conda resolves the OpenMM CUDA plugin against the CUDA 12 line; you do not need to install a separate system CUDA toolkit. An up-to-date vendor driver is still required. This is a Cranberry-tested recommendation: OpenMM's installation guide describes broader CUDA-version selection, but Cranberry CUDA smoke tests on the target cluster passed with CUDA 12 while CUDA 13 failed during real OpenMM CUDA context creation with `CUDA_ERROR_UNSUPPORTED_PTX_VERSION`.
 
 ```bash
-conda create -n cranberry -c conda-forge python=3.11 openmm
+conda create -n cranberry -c conda-forge python=3.11 openmm cuda-version=12
 conda activate cranberry
 git clone https://github.com/yihengwuKP/cranberry.git
 cd cranberry
@@ -27,7 +27,7 @@ python -m pip install --no-deps -e .
 python -m openmm.testInstallation
 ```
 
-Use `--platform CUDA` for GPU runs after the self-test reports a CUDA platform:
+Use `--platform CUDA` for GPU runs after the self-test reports a CUDA platform. If possible on your cluster, prefer a CUDA 12.9-compatible solve within the CUDA 12 line; otherwise use the latest compatible CUDA 12.x OpenMM target available from conda-forge:
 
 ```bash
 cranberry energy cranberry/data/examples/2ntCG_cg_vs_conect.pdb --platform CUDA

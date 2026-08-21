@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>CUDA 12 Installation Guidance Report</title>
+</head>
+<body>
+  <h1>CUDA 12 Installation Guidance Report</h1>
+  <p><strong>Branch:</strong> codex/issue-6-cuda12-docs</p>
+  <p><strong>Scope:</strong> public installation documentation only.</p>
+
+  <h2>Why this changed</h2>
+  <p>
+    Issue #6 reproduced an OpenMM CUDA failure in a fresh CUDA 13 conda
+    environment. OpenMM's self-test completed, but minimal real CUDA context
+    creation failed with <code>CUDA_ERROR_UNSUPPORTED_PTX_VERSION</code>. The
+    same style of environment using the CUDA 12 OpenMM target passed the
+    CUDA context checks. This points to an OpenMM CUDA runtime, driver, and PTX
+    compatibility issue in the target environment rather than a Cranberry input
+    or force-field inconsistency.
+  </p>
+
+  <h2>Documentation changes</h2>
+  <ul>
+    <li>
+      <code>README.md</code>: the recommended GPU install now pins
+      <code>cuda-version=12</code> when creating the conda environment.
+    </li>
+    <li>
+      <code>README.md</code>: added a short explanation that Cranberry's
+      recommendation is based on local CUDA smoke testing, and that CUDA 13
+      failed during real OpenMM CUDA context creation in this environment.
+    </li>
+    <li>
+      <code>docs/installation.md</code>: mirrored the CUDA 12 conda pin for
+      editable GPU development installs and for recreating an environment when
+      the CUDA platform is missing.
+    </li>
+    <li>
+      <code>docs/installation.md</code>: added the rationale for documenting
+      CUDA 12 even though OpenMM's general installation guide supports broader
+      CUDA-version selection.
+    </li>
+  </ul>
+
+  <h2>Important wording</h2>
+  <pre><code>conda create -n cranberry -c conda-forge python=3.11 openmm cuda-version=12</code></pre>
+  <pre><code>conda create -n cranberry-dev -c conda-forge python=3.11 openmm cuda-version=12</code></pre>
+  <p>
+    The docs also say to prefer a CUDA 12.9-compatible solve within the CUDA 12
+    line where one is available on the target cluster. This avoids claiming that
+    CUDA 13 is universally broken while still documenting the Cranberry-tested
+    environment that passed.
+  </p>
+
+  <h2>Validation</h2>
+  <ul>
+    <li><code>git diff --check</code>: passed.</li>
+    <li>
+      <code>conda run -n cranberry-dev python -m sphinx -b html docs /tmp/cranberry-issue6-docs-build</code>:
+      passed; Sphinx reported <code>build succeeded</code>.
+    </li>
+  </ul>
+
+  <h2>Risks and follow-up</h2>
+  <ul>
+    <li>
+      The conda pin uses <code>cuda-version=12</code> rather than an exact
+      <code>12.9</code> pin so the solver can choose a compatible CUDA 12.x
+      package set on clusters where exact minor availability differs.
+    </li>
+    <li>
+      A separate runtime diagnostic change can still improve the Cranberry API
+      by translating OpenMM's unsupported PTX exception into a more actionable
+      user-facing message.
+    </li>
+  </ul>
+</body>
+</html>
