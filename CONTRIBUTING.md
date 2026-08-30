@@ -55,6 +55,4 @@ cranberry energy cranberry/data/examples/2ntCG_cg_vs_conect.pdb --platform CUDA
 
 ## Project Context
 
-The legacy `OpenMM-CGRNA/` repository lives beside this project in the parent workspace and should be treated as reference material by default. Temporary reference outputs should be generated from the GPU workshop copy documented in `docs/dev/reference-output-generation.md`.
-
 Before changing package architecture, force-field behavior, CLI contracts, output formats, or tests, read `docs/dev/cranberry-v1-plan.md`.
