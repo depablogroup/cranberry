@@ -12,7 +12,7 @@ The package is currently an alpha release tied to the published CRANBERRY model 
 - Compute total and force-group-resolved energies.
 - Run CPU or GPU MD with checkpoints, restart, detailed logs, and DCD output.
 - Run OpenMMTools parallel tempering with optional MPI, periodic boundaries, restart, and replica- or temperature-indexed DCD extraction.
-- Use packaged force-field assets and reference structures without a legacy source checkout.
+- Use packaged force-field assets and reference structures.
 
 ## Installation
 
