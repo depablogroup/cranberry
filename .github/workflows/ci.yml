@@ -72,21 +72,21 @@ jobs:
               raise SystemExit(f"wheel is missing publication assets: {sorted(missing)}")
           PY
 
-security:
-  name: Secret scan
-  runs-on: ubuntu-latest
-  permissions:
-    contents: read
-
-  steps:
-    - name: Check out full history
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-
-    - name: Run Gitleaks
-      run: |
-        docker run --rm \
-          -v "${{ github.workspace }}:/repo" \
-          ghcr.io/gitleaks/gitleaks:latest \
-          git --redact --verbose /repo
+  security:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+  
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+  
+      - name: Run Gitleaks
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/repo" \
+            ghcr.io/gitleaks/gitleaks:latest \
+            git --redact --verbose /repo
