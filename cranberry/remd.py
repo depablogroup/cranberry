@@ -139,8 +139,10 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
     if config.n_analysis < 0:
         raise ValueError('n_analysis must be zero or greater')
 
-    n_iterations = max(1, int(config.steps / config.swap_steps))
-    checkpoint_interval = max(1, int(config.steps / (config.swap_steps * config.n_record)))
+    full_iterations, remainder_steps, n_iterations = _remd_step_plan(
+        config.steps, config.swap_steps
+    )
+    checkpoint_interval = max(1, int(n_iterations / config.n_record))
     online_analysis_interval = None if config.n_analysis == 0 else max(1, int(n_iterations / config.n_analysis))
     jax_platform_name_env = os.environ.get('JAX_PLATFORM_NAME')
 
@@ -256,7 +258,12 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
                 ),
             )
         sampler.minimize()
-        sampler.run()
+        _run_remd_steps(
+            sampler,
+            full_iterations=full_iterations,
+            remainder_steps=remainder_steps,
+            restart=False,
+        )
         stored_temperatures = _read_temperatures_from_reporter(reporter) if _is_mpi_root(mpi_runtime) else None
         stored_temperatures = _mpi_bcast(mpiplus, stored_temperatures)
         _close_if_present(reporter)
@@ -303,7 +310,12 @@ def run_remd(config: RemdRunConfig) -> RemdRunResult:
                     system=system,
                 ),
             )
-        sampler.extend(n_iterations)
+        _run_remd_steps(
+            sampler,
+            full_iterations=full_iterations,
+            remainder_steps=remainder_steps,
+            restart=True,
+        )
 
     output_dcd_path = None
     output_dcd_manifest_path = None
@@ -459,6 +471,51 @@ def _load_openmmtools():
     except ImportError as exc:  # pragma: no cover - exercised in environments without the extra
         raise ImportError("REMD requires the optional 'remd' extra (openmmtools).") from exc
     return openmmtools, mcmc, states, multistate
+
+
+def _set_sampler_move_steps(sampler, n_steps: int) -> None:
+    """Set the propagation length for every thermodynamic-state move."""
+
+    moves = sampler.mcmc_moves
+    if isinstance(moves, (list, tuple)):
+        for move in moves:
+            move.n_steps = n_steps
+    else:
+        moves.n_steps = n_steps
+
+
+def _remd_step_plan(steps: int, swap_steps: int) -> tuple[int, int, int]:
+    """Split a requested run into full exchange intervals and a final remainder."""
+
+    full_iterations, remainder_steps = divmod(steps, swap_steps)
+    n_iterations = max(1, full_iterations + (1 if remainder_steps else 0))
+    return full_iterations, remainder_steps, n_iterations
+
+
+def _run_remd_steps(
+    sampler,
+    *,
+    full_iterations: int,
+    remainder_steps: int,
+    restart: bool,
+) -> None:
+    """Run exactly the requested step count using a shortened final move."""
+
+    if full_iterations:
+        if restart:
+            sampler.extend(full_iterations)
+        else:
+            sampler.run(n_iterations=full_iterations)
+    if not remainder_steps:
+        return
+
+    _set_sampler_move_steps(sampler, remainder_steps)
+    if full_iterations:
+        sampler.extend(1)
+    elif restart:
+        sampler.extend(1)
+    else:
+        sampler.run(n_iterations=1)
 
 
 def _load_mpiplus():

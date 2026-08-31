@@ -19,6 +19,8 @@ from cranberry.remd import (
     _warn_cuda_online_analysis,
     run_remd,
     translate_netcdf_to_dcd,
+    _remd_step_plan,
+    _run_remd_steps,
 )
 
 
@@ -49,6 +51,61 @@ def test_temperature_ladder_spec_default_uses_openmmtools_schedule():
 def test_temperature_ladder_spec_override_wins():
     spec = TemperatureLadderSpec(temperatures=(300.0, 325.0, 350.0))
     assert spec.resolve() == (300.0, 325.0, 350.0)
+
+
+def test_remd_step_plan_preserves_requested_total_steps():
+    assert _remd_step_plan(1, 5000) == (0, 1, 1)
+    assert _remd_step_plan(5001, 5000) == (1, 1, 2)
+    assert _remd_step_plan(10000, 5000) == (2, 0, 2)
+
+
+class _FakeMove:
+    def __init__(self):
+        self.n_steps = 0
+
+
+class _FakeSampler:
+    def __init__(self, *, iteration=0, moves=None):
+        self._iteration = iteration
+        self.mcmc_moves = moves or [_FakeMove(), _FakeMove()]
+        for move in self.mcmc_moves:
+            move.n_steps = 5000
+        self.calls = []
+
+    def run(self, n_iterations=None):
+        self.calls.append(("run", n_iterations, self.mcmc_moves[0].n_steps))
+        self._iteration += n_iterations or 0
+
+    def extend(self, n_iterations):
+        self.calls.append(("extend", n_iterations, self.mcmc_moves[0].n_steps))
+        self._iteration += n_iterations
+
+
+def test_run_remd_steps_preserves_non_divisible_step_count():
+    sampler = _FakeSampler()
+
+    _run_remd_steps(
+        sampler,
+        full_iterations=2,
+        remainder_steps=3,
+        restart=False,
+    )
+
+    assert sampler.calls == [("run", 2, 5000), ("extend", 1, 3)]
+    assert all(move.n_steps == 3 for move in sampler.mcmc_moves)
+
+
+def test_run_remd_steps_preserves_short_run_step_count():
+    sampler = _FakeSampler()
+
+    _run_remd_steps(
+        sampler,
+        full_iterations=0,
+        remainder_steps=3,
+        restart=False,
+    )
+
+    assert sampler.calls == [("run", 1, 3)]
 
 
 @pytest.mark.remd

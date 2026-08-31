@@ -19,7 +19,7 @@ The package is currently an alpha release tied to the published CRANBERRY model 
 The recommended installation is a GPU-capable conda environment. OpenMM's conda-forge package selects a CUDA build compatible with the available NVIDIA driver; you do not need to install a separate system CUDA toolkit. An up-to-date vendor driver is still required. See the [OpenMM installation guide](https://docs.openmm.org/latest/userguide/application/01_getting_started.html) for CUDA-version-specific options.
 
 ```bash
-conda create -n cranberry -c conda-forge python=3.11 openmm
+conda create -n cranberry -c conda-forge python=3.11 pip openmm h5py
 conda activate cranberry
 git clone https://github.com/yihengwuKP/cranberry.git
 cd cranberry
