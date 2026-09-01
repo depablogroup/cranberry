@@ -81,20 +81,20 @@ cranberry md atomistic-rna_cg_vs_conect.pdb \
   --output-dir md-run
 ```
 
-On Slurm GPU nodes, pack several independent MD runs into one GPU allocation with CUDA MPS:
+On Slurm GPU nodes, run several independent MD jobs concurrently in one GPU allocation with CUDA MPS:
 
 ```bash
-scripts/hpc/submit_md_mps_pack_example_slurm.sh \
+scripts/hpc/submit_md_mps_concurrent_example_slurm.sh \
   --pdb system_a_cg_vs_conect.pdb \
   --pdb system_b_cg_vs_conect.pdb \
   --steps 100000 \
   --platform CUDA \
-  --output-root runs/md-pack \
+  --output-root runs/md-concurrent \
   --account my_account \
   --partition gpu
 ```
 
-See `docs/tutorials/packed-md-hpc.md` for the full prepare-and-submit workflow.
+See `docs/tutorials/concurrent-md-hpc.md` for the full prepare-and-submit workflow.
 
 Run periodic REMD with folded and extended starting conformations:
 
@@ -147,7 +147,7 @@ The [output reference](docs/reference/outputs.md) describes filenames, restart b
 
 - [Quick start](docs/quickstart.md)
 - [Prepare and run MD](docs/tutorials/prepare-and-run-md.md)
-- [Prepare and run packed MD on HPC](docs/tutorials/packed-md-hpc.md)
+- [Prepare and run concurrent MD on HPC](docs/tutorials/concurrent-md-hpc.md)
 - [Energy decomposition](docs/tutorials/energy-decomposition.md)
 - [REMD](docs/tutorials/remd.md)
 - [API reference](docs/reference/api.md)

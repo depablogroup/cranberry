@@ -1,6 +1,6 @@
-# Prepare And Run Packed MD On HPC
+# Prepare And Run Concurrent MD On HPC
 
-This tutorial shows how to pack several independent `cranberry md` runs into one Slurm GPU allocation. The packed-MD example is useful for small or moderate systems that do not fully occupy a GPU by themselves. The submitter starts CUDA MPS when available, then launches one plain `cranberry md` command per input PDB in the background.
+This tutorial shows how to run several independent `cranberry md` jobs concurrently inside one Slurm GPU allocation. The concurrent-MD example is useful for small or moderate systems that do not fully occupy a GPU by themselves. The submitter starts CUDA MPS when available, then launches one plain `cranberry md` command per input PDB in the background.
 
 ## Prepare Inputs
 
@@ -28,12 +28,12 @@ cranberry prepare system_a_cg_vs_conect.pdb \
   --output system_a_prepared_cg_vs_conect.pdb
 ```
 
-## Submit Packed MD
+## Submit Concurrent MD
 
 Submit one Slurm job and pass one `--pdb` option per independent run:
 
 ```bash
-scripts/hpc/submit_md_mps_pack_example_slurm.sh \
+scripts/hpc/submit_md_mps_concurrent_example_slurm.sh \
   --pdb system_a_cg_vs_conect.pdb \
   --pdb system_b_cg_vs_conect.pdb \
   --pdb system_c_cg_vs_conect.pdb \
@@ -43,7 +43,7 @@ scripts/hpc/submit_md_mps_pack_example_slurm.sh \
   --steps 100000 \
   --n-record 1000 \
   --platform CUDA \
-  --output-root runs/md-pack \
+  --output-root runs/md-concurrent \
   --account my_account \
   --partition gpu
 ```
@@ -55,19 +55,19 @@ cranberry md system_a_cg_vs_conect.pdb \
   --steps 100000 \
   --n-record 1000 \
   --platform CUDA \
-  --output-dir runs/md-pack/000_system_a &
+  --output-dir runs/md-concurrent/000_system_a &
 
 cranberry md system_b_cg_vs_conect.pdb \
   --steps 100000 \
   --n-record 1000 \
   --platform CUDA \
-  --output-dir runs/md-pack/001_system_b &
+  --output-dir runs/md-concurrent/001_system_b &
 
 cranberry md system_c_cg_vs_conect.pdb \
   --steps 100000 \
   --n-record 1000 \
   --platform CUDA \
-  --output-dir runs/md-pack/002_system_c &
+  --output-dir runs/md-concurrent/002_system_c &
 
 wait
 ```
@@ -75,13 +75,13 @@ wait
 CUDA MPS is on by default. Disable it only for debugging or for systems where the CUDA MPS control daemon is unavailable:
 
 ```bash
-scripts/hpc/submit_md_mps_pack_example_slurm.sh \
+scripts/hpc/submit_md_mps_concurrent_example_slurm.sh \
   --no-mps \
   --pdb system_a_cg_vs_conect.pdb \
   --pdb system_b_cg_vs_conect.pdb \
   --steps 100000 \
   --platform CUDA \
-  --output-root runs/md-pack \
+  --output-root runs/md-concurrent \
   --account my_account \
   --partition gpu
 ```
@@ -91,13 +91,13 @@ scripts/hpc/submit_md_mps_pack_example_slurm.sh \
 Use `--dry-run` to inspect the generated `sbatch` command without submitting:
 
 ```bash
-scripts/hpc/submit_md_mps_pack_example_slurm.sh \
+scripts/hpc/submit_md_mps_concurrent_example_slurm.sh \
   --dry-run \
   --pdb system_a_cg_vs_conect.pdb \
   --pdb system_b_cg_vs_conect.pdb \
   --steps 100000 \
   --platform CUDA \
-  --output-root runs/md-pack \
+  --output-root runs/md-concurrent \
   --account my_account \
   --partition gpu
 ```
@@ -107,7 +107,7 @@ scripts/hpc/submit_md_mps_pack_example_slurm.sh \
 Each PDB gets a separate output directory under `--output-root`:
 
 ```text
-runs/md-pack/
+runs/md-concurrent/
   launcher_env.txt
   mps-log/
   000_system_a/
@@ -127,17 +127,17 @@ runs/md-pack/
 
 ## Periodic Runs
 
-Pass `--periodic` when all packed runs should use explicit periodic boundary conditions:
+Pass `--periodic` when all concurrent runs should use explicit periodic boundary conditions:
 
 ```bash
-scripts/hpc/submit_md_mps_pack_example_slurm.sh \
+scripts/hpc/submit_md_mps_concurrent_example_slurm.sh \
   --pdb duplex_a_cg_vs_conect.pdb \
   --pdb duplex_b_cg_vs_conect.pdb \
   --steps 100000 \
   --platform CUDA \
   --periodic \
   --box-padding 3.0 \
-  --output-root runs/md-pack-periodic \
+  --output-root runs/md-concurrent-periodic \
   --account my_account \
   --partition gpu
 ```
