@@ -644,13 +644,9 @@ class CranberryForceField:
             "+".join(energy_terms)
             + ";"
             + "".join(component_definitions)
-            + "cos_normal_psi=select(sin(D2D1A1)*sin(D1A1A2),"
-            + "cos_normal_psi_full,cos_normal_psi_partial);"
-            + "cos_normal_psi_full=sin(D2D1A1)*sin(D1A1A2)*cos(phi)"
-            + "-cos(D2D1A1)*cos(D1A1A2);"
-            + "cos_normal_psi_partial=-cos(D2D1A1)*cos(D1A1A2);"
+            + f"cos_normal_psi={_normal_cosine_expression()};"
             + "r=distance(d1,a1);D2D1A1=angle(d2,d1,a1);"
-            + "D1A1A2=angle(d1,a1,a2);phi=dihedral(d2,d1,a1,a2)"
+            + "D1A1A2=angle(d1,a1,a2)"
         )
         force = mm.CustomHbondForce(expr)
         for component in components:
@@ -1052,6 +1048,19 @@ def _stacking_component_expression(
     return energy, definitions
 
 
+def _normal_cosine_expression(
+    d1: str = "d1",
+    d2: str = "d2",
+    a1: str = "a1",
+    a2: str = "a2",
+) -> str:
+    return (
+        f"(distance({d2},{a1})^2+distance({d1},{a2})^2"
+        f"-distance({d2},{a2})^2-distance({d1},{a1})^2)"
+        f"/(2*distance({d1},{d2})*distance({a1},{a2}))"
+    )
+
+
 _PACKED_PAIRING_PARAMETER_NAMES = (
     "Up",
     "r0",
@@ -1173,15 +1182,10 @@ def _donor_packed_pairing_expr(
         energy
         + "; "
         + "".join(component_terms)
-        + "cos_normal_psi=select(sin(D2D1A1)*sin(D1A1A2), "
-        + "cos_normal_psi_full, cos_normal_psi_partial); "
-        + "cos_normal_psi_full=sin(D2D1A1)*sin(D1A1A2)*"
-        + "cos(D2D1A1A2)-cos(D2D1A1)*cos(D1A1A2); "
-        + "cos_normal_psi_partial=-cos(D2D1A1)*cos(D1A1A2); "
+        + f"cos_normal_psi={_normal_cosine_expression(d1, d2, a1, a2)}; "
         + f"r=distance({d1},{a1}); "
         + f"D2D1A1=angle({d2},{d1},{a1}); "
         + f"D1A1A2=angle({d1},{a1},{a2}); "
-        + f"D2D1A1A2=dihedral({d2},{d1},{a1},{a2}); "
         + "D3D1D2A1=select(sin(D1D2A1),"
         + f"dihedral({d3},{d1},{d2},{a1}),0); "
         + "A3A1A2D1=select(sin(A1A2D1),"
