@@ -2,6 +2,7 @@ import csv
 import json
 
 import numpy as np
+import openmm as mm
 import pytest
 from openmm import app, unit
 
@@ -51,10 +52,21 @@ def test_create_system_periodic_switches_legacy_pbc_forces():
     ).usesPeriodicBoundaryConditions()
 
     assert all(not force.usesPeriodicBoundaryConditions() for force in _forces_by_name(nonperiodic, "pucker"))
-    assert all(force.usesPeriodicBoundaryConditions() for force in _forces_by_name(periodic, "pucker"))
+    assert all(not force.usesPeriodicBoundaryConditions() for force in _forces_by_name(periodic, "pucker"))
     assert not _force_by_name(periodic, "bond").usesPeriodicBoundaryConditions()
     assert not _force_by_name(periodic, "angle").usesPeriodicBoundaryConditions()
     assert not _force_by_name(periodic, "dihedral").usesPeriodicBoundaryConditions()
+
+
+def test_create_system_com_motion_is_explicit_for_strict_nve():
+    pdb = app.PDBFile(str(data_path("examples/2ntCG_cg_vs_conect.pdb")))
+    default_system = CranberryForceField().createSystem(pdb.topology, positions=pdb.positions)
+    strict_nve_system = CranberryForceField().createSystem(
+        pdb.topology, positions=pdb.positions, remove_cmmotion=False
+    )
+
+    assert any(isinstance(force, mm.CMMotionRemover) for force in default_system.getForces())
+    assert not any(isinstance(force, mm.CMMotionRemover) for force in strict_nve_system.getForces())
 
 
 def test_common_periodic_positions_guarantee_requested_padding():

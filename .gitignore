@@ -22,3 +22,4 @@ docs/_build/
 **/output_checkpoint.nc
 # Local benchmark raw run artifacts
 benchmarks/results/*_runs/
+benchmarks/results/timestep-*-rtx2060.json

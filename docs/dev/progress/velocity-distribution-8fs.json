@@ -1,0 +1,28 @@
+{
+  "2ntCG": {
+    "constraints": 2,
+    "degrees_of_freedom": 28,
+    "velocity_samples": 3300,
+    "velocity_mean": -0.00013795739045700732,
+    "velocity_std": 0.9923115481747297,
+    "velocity_skew": -0.08180734565479603,
+    "velocity_excess_kurtosis": 0.002206943497834679,
+    "kinetic_x_mean": 28.132477493444608,
+    "kinetic_x_variance": 45.44527485856118,
+    "chi2_expected_mean": 28,
+    "chi2_expected_variance": 56
+  },
+  "1l2x": {
+    "constraints": 27,
+    "degrees_of_freedom": 456,
+    "velocity_samples": 48600,
+    "velocity_mean": 0.00040532665692820006,
+    "velocity_std": 1.0076015242967302,
+    "velocity_skew": -0.009830401658070765,
+    "velocity_excess_kurtosis": 0.035027163907305425,
+    "kinetic_x_mean": 463.0555019302122,
+    "kinetic_x_variance": 950.4001960300964,
+    "chi2_expected_mean": 456,
+    "chi2_expected_variance": 912
+  }
+}
