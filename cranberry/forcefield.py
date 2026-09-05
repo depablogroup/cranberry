@@ -248,8 +248,14 @@ class CranberryForceField:
         enabled_forces: Iterable[str] | None = None,
         periodic: bool = False,
         box_padding=2.0 * unit.nanometer,
+        remove_cmmotion: bool = True,
     ) -> mm.System:
-        """Create an OpenMM System from a canonical CRANBERRY CG topology."""
+        """Create an OpenMM System from a canonical CRANBERRY CG topology.
+
+        COM-motion removal is retained by default for Langevin workflows.
+        Strict NVE callers should pass ``remove_cmmotion=False`` and remove
+        any initial COM velocity once before starting production.
+        """
 
         if periodic:
             if positions is None:
@@ -260,7 +266,7 @@ class CranberryForceField:
         if unknown:
             raise ValueError(f"Unknown force names: {', '.join(sorted(unknown))}")
 
-        system = self._xml.createSystem(topology)
+        system = self._xml.createSystem(topology, removeCMMotion=remove_cmmotion)
         data = _collect_topology(topology)
 
         sugar_indices: dict[str, list] = {"bond": [], "angle": [], "dihedral": []}

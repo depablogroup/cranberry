@@ -53,6 +53,12 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     validate_args(args)
+    print(
+        f"{args.ensemble.upper()} production: "
+        f"removeCMMotion={args.ensemble != 'nve'}; "
+        "Langevin equilibration: removeCMMotion=True",
+        flush=True,
+    )
     payload = initialize_output(args)
     completed = {row_key(row) for row in payload["runs"]}
     total = (
@@ -68,15 +74,24 @@ def main() -> int:
         for temperature_k in args.temperatures_k:
             positions = prepare_periodic_positions(pdb.topology, pdb.positions, 4 * unit.nanometer) if args.periodic else pdb.positions
             forcefield = CranberryForceField()
+            equilibration_system = forcefield.createSystem(
+                pdb.topology,
+                positions=positions,
+                temperature=temperature_k * unit.kelvin,
+                periodic=args.periodic,
+                box_padding=4 * unit.nanometer,
+                remove_cmmotion=True,
+            )
             system = forcefield.createSystem(
                 pdb.topology,
                 positions=positions,
                 temperature=temperature_k * unit.kelvin,
                 periodic=args.periodic,
                 box_padding=4 * unit.nanometer,
+                remove_cmmotion=args.ensemble != "nve",
             )
             geometry_spec = geometry_observable_spec(system, pdb.topology, forcefield)
-            start = equilibrate(system, pdb, positions, temperature_k, args)
+            start = equilibrate(equilibration_system, pdb, positions, temperature_k, args)
             for seed in args.seeds:
                 seeded_start = assign_velocities(start, system, temperature_k, seed, args)
                 for timestep_fs in args.timesteps_fs:
@@ -162,6 +177,8 @@ def configuration(args: argparse.Namespace) -> dict:
         "sample_ps": args.sample_ps,
         "equilibration_timestep_fs": args.equilibration_timestep_fs,
         "periodic": args.periodic,
+        "equilibration_remove_cmmotion": True,
+        "production_remove_cmmotion": args.ensemble != "nve",
     }
 
 
@@ -327,6 +344,7 @@ def run_condition(
         "error": error,
         "production_ps": args.production_ps,
         "sample_ps": args.sample_ps,
+        "remove_cmmotion": ensemble != "nve",
         "geometry_labels": geometry_spec["labels"],
         "wall_seconds": wall_seconds,
         **metrics,

@@ -1,5 +1,87 @@
 # Timestep validation
 
+## Deferred force-sensitivity and cutoff audit (2026-09-05)
+
+The old alpha.1 H5 model has two force-field risks that are documented here
+for follow-up; this note does not change the force field.
+
+### Stacking radial sensitivity
+
+The stacking radial envelope is
+
+```text
+f(r) = 0.5 * (tanh(r_sens * (abs(r-r0) - dr0)) - 1)
+```
+
+All alpha.1 stacking rows use `r_sens = 80 nm^-1`, so each radial wall has a
+transition width of roughly `1/r_sens = 0.0125 nm`. At the wall, the maximum
+radial slope is approximately `r_sens/2 = 40 nm^-1`. The resulting nominal
+force scale `U0*r_sens/2` is approximately:
+
+| Component | `U0` range (kJ/mol) | nominal radial force scale (kJ/mol/nm) |
+| --- | ---: | ---: |
+| stacking35 | 10.3--25.2 | 411--1008 |
+| stacking55 | 0.5--12.1 | 20--483 |
+| stacking33 | 0.5--12.1 | 20--483 |
+
+The `abs(r-r0)` term also creates a derivative cusp at `r=r0`, but its force
+scale is only a few kJ/mol/nm for these parameters because the tanh is nearly
+saturated at the center. The much larger timestep sensitivity comes from the
+two tanh walls at `r0-dr0` and `r0+dr0`. In the 2.25 fs NVE diagnostic, the
+stacking35 force reached about 1200 kJ/mol/nm and caused the measured one-step
+energy error. The 0.7 nm stacking cutoff was not involved; the tanh envelope
+was already numerically zero there.
+
+### Pairing radial and angular sensitivity
+
+Pairing uses the same `abs` plus tanh radial form, with substantially wider
+parameter variation:
+
+| Quantity | alpha.1 range |
+| --- | ---: |
+| `Up` | 3.37--36.45 kJ/mol |
+| `r0` | 0.506--0.846 nm |
+| `dr0` | 0.044--0.145 nm |
+| `r_sens` | 29.4--114.7 nm^-1 |
+| nominal `Up*r_sens/2` | 69--2090 kJ/mol/nm |
+| `theta_sens` | 40 |
+| `phi_sens` | 40 or 120 |
+
+Thus some pairing rows have a nominal radial force scale higher than the
+largest stacking35 row. Pairing's angular gates can also be narrow: the
+cosine transition scale is about `1/40`, or about 1--2 degrees near ordinary
+angles, and the `phi_sens=120` rows are narrower still. Actual force depends on
+the angular gates being active, so these are sensitivity bounds rather than a
+claim that every pairing interaction is problematic.
+
+### Pairing cutoff compatibility risk
+
+Pairing uses a hard `0.8 nm` cutoff: the compound implementation includes
+`step(0.8-r)`, while the fallback uses OpenMM's cutoff machinery. Several
+alpha.1 radial envelopes are still nonzero at `0.8 nm` before angular gating:
+
+| Geometry row | `r0+dr0` (nm) | radial energy at `r=0.8 nm` (kJ/mol) |
+| --- | ---: | ---: |
+| `AS-GS` | 0.931 | -7.56 |
+| `GS+UH` | 0.803 | -4.35 |
+| `AS-AW` | 0.824 | -4.93 |
+
+If their angular gates are active when a pair crosses `0.8 nm`, the interaction
+can be truncated discontinuously. This was not the cause of the observed
+2.25 fs `2ntCG` event—the pairing force group was zero in that event—but it is
+a separate unresolved risk. A targeted per-pair scan through `0.79--0.81 nm`
+should be run before relying on pairing for long NVE trajectories.
+
+### Deferred follow-up
+
+1. Add a force/energy regression scan for every pairing row across the 0.8 nm
+   cutoff, with active angular geometries.
+2. Compare the compound and CustomHbond pairing implementations at and around
+   the cutoff.
+3. Prototype a smooth radial shell and/or a soft absolute value for stacking
+   and pairing, then revalidate energy decomposition, structural distributions,
+   and timestep stability before changing alpha.1 behavior.
+
 ## Long-run correction (2026-08-11)
 
 The historical 200 ps NVE recommendation below is superseded. No Cranberry NVE
