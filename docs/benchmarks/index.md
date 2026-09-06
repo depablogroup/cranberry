@@ -14,7 +14,7 @@ current
 
 | Series | Generated | Platform | MPS | GPU | Raw JSON |
 | --- | --- | --- | ---: | --- | --- |
-| `nvidia-geforce-rtx-2060` | `2026-07-08T21:17:19.546056+00:00` | `CUDA` | `False` | `NVIDIA GeForce RTX 2060` | `nvidia-geforce-rtx-2060.json` |
+| `nvidia-geforce-rtx-2060` | `2026-09-06T00:58:17.869780+00:00` | `CUDA` | `False` | `NVIDIA GeForce RTX 2060` | `nvidia-geforce-rtx-2060.json` |
 
 ## Planned expansion
 

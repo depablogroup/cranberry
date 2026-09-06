@@ -2,8 +2,8 @@
   "benchmark_kind": "md-single-system-suite",
   "cranberry_version": "1.0.0a1",
   "cuda_visible_devices": null,
-  "driver_version": "595.71.05",
-  "generated_at": "2026-07-08T21:17:19.546056+00:00",
+  "driver_version": "595.84",
+  "generated_at": "2026-09-06T00:58:17.869780+00:00",
   "gpu_name": "NVIDIA GeForce RTX 2060",
   "model": "default",
   "mps_enabled": false,
@@ -13,79 +13,79 @@
     {
       "atoms": 15,
       "fixture": "examples/2ntCG_cg_vs_conect.pdb",
-      "ns_per_day": 2276.266203251531,
+      "ns_per_day": 7967.094571401306,
       "nucleotides": 2,
-      "seconds_per_step": 0.00018978448099915112,
+      "seconds_per_step": 5.422302900115028e-05,
       "steps": 1000,
       "system_id": "2ntCG",
       "timestep_fs": 5.0,
-      "wall_seconds": 0.18978448099915113
+      "wall_seconds": 0.05422302900115028
     },
     {
       "atoms": 95,
       "fixture": "examples/1zih_cg_vs_conect.pdb",
-      "ns_per_day": 715.4724166151418,
+      "ns_per_day": 3370.322045617469,
       "nucleotides": 12,
-      "seconds_per_step": 0.0006037968620003085,
+      "seconds_per_step": 0.0001281776620016899,
       "steps": 1000,
       "system_id": "1zih",
       "timestep_fs": 5.0,
-      "wall_seconds": 0.6037968620003085
+      "wall_seconds": 0.1281776620016899
     },
     {
       "atoms": 190,
       "fixture": "examples/157d_cg_vs_conect.pdb",
-      "ns_per_day": 581.4900577469111,
+      "ns_per_day": 2875.5375110241325,
       "nucleotides": 24,
-      "seconds_per_step": 0.0007429189790000237,
+      "seconds_per_step": 0.0001502327819907805,
       "steps": 1000,
       "system_id": "157d",
       "timestep_fs": 5.0,
-      "wall_seconds": 0.7429189790000237
+      "wall_seconds": 0.1502327819907805
     },
     {
       "atoms": 216,
       "fixture": "examples/1l2x_cg_vs_conect.pdb",
-      "ns_per_day": 570.7977530837852,
+      "ns_per_day": 2882.8653952012473,
       "nucleotides": 27,
-      "seconds_per_step": 0.0007568354949999048,
+      "seconds_per_step": 0.00014985090900154318,
       "steps": 1000,
       "system_id": "1l2x",
       "timestep_fs": 5.0,
-      "wall_seconds": 0.7568354949999048
+      "wall_seconds": 0.1498509090015432
     },
     {
       "atoms": 319,
       "fixture": "examples/rU40_cg_vs_conect.pdb",
-      "ns_per_day": 1291.4732609451116,
+      "ns_per_day": 3435.9407853561793,
       "nucleotides": 40,
-      "seconds_per_step": 0.00033450169900061153,
+      "seconds_per_step": 0.00012572975699731614,
       "steps": 1000,
       "system_id": "rU40",
       "timestep_fs": 5.0,
-      "wall_seconds": 0.33450169900061155
+      "wall_seconds": 0.12572975699731614
     },
     {
       "atoms": 342,
       "fixture": "examples/2MI0_cg_vs_conect.pdb",
-      "ns_per_day": 603.5368828857524,
+      "ns_per_day": 2725.5731329688765,
       "nucleotides": 43,
-      "seconds_per_step": 0.0007157806129998789,
+      "seconds_per_step": 0.00015849877399159597,
       "steps": 1000,
       "system_id": "2mi0",
       "timestep_fs": 5.0,
-      "wall_seconds": 0.7157806129998789
+      "wall_seconds": 0.15849877399159595
     },
     {
       "atoms": 760,
       "fixture": "examples/5ml7_cg_vs_conect.pdb",
-      "ns_per_day": 396.62079450295147,
+      "ns_per_day": 2137.881964806377,
       "nucleotides": 95,
-      "seconds_per_step": 0.0010892015900008118,
+      "seconds_per_step": 0.000202069154009223,
       "steps": 1000,
       "system_id": "5ml7",
       "timestep_fs": 5.0,
-      "wall_seconds": 1.0892015900008118
+      "wall_seconds": 0.20206915400922298
     }
   ],
   "salt_millimolar": 150.0,
