@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>REMD MPI MPS One-GPU Example Review</title></head>
+<body>
+<h1>REMD MPI MPS One-GPU Example Review</h1>
+<p>Ports PR #19 (head <code>399d81e</code>) onto current main
+<code>5660e3d</code> in a separate worktree on branch
+<code>fix/remd-mpi-mps-one-gpu</code>. The user reviewed the port and explicitly approved committing and opening a replacement PR.</p>
+<h2>Changes and conflict resolution</h2>
+<ul>
+<li>Added the executable one-GPU Slurm batch example from PR #19 without changing its contents.</li>
+<li>Inserted README submission instructions beside the current periodic REMD example.
+The replica override example also overrides Slurm's task allocation.</li>
+<li>Extended the existing HPC tests, preserving concurrent-MD coverage.</li>
+<li>Kept main's root import shim: its standalone-import guard already supersedes the old PR fix.</li>
+<li>No simulation, force-field, CLI, dependency, or output-contract changes; no deprecated branch history merged.</li>
+</ul>
+<h2>Important code paths</h2>
+<p>The batch allocation requests one GPU, eight tasks, four CPUs per task,
+16 GB memory, and two hours. It enables OpenMMTools MPI, creates job-specific
+MPS pipe and log directories, starts MPS if available, and installs an exit trap
+that stops only a daemon this script successfully started. Missing MPS tooling
+produces a warning and allows the launcher to continue.</p>
+<pre><code>mps_started=0
+stop_mps() {
+    if [ "$mps_started" -eq 1 ]; then
+        echo quit | nvidia-cuda-mps-control &gt;/dev/null 2&gt;&amp;1 || true
+    fi
+}
+trap stop_mps EXIT
+
+srun -n "$N_REPLICAS" "$CRANBERRY_BIN" remd "$PDB_PATH" \
+    --extra-start-pdb "$EXTRA_START_PDB" \
+    --periodic --steps "$STEPS" --n-replicas "$N_REPLICAS" \
+    --platform CUDA --output-dir "$OUTPUT_DIR"</code></pre>
+<p>Defaults use the bundled folded and extended ggcGCAAgcc structures,
+100000 steps, and eight replicas (or Slurm's task count). Environment overrides
+remain those provided by PR #19.</p>
+<h2>Validation</h2>
+<ul>
+<li>Bash syntax and Git whitespace checks: passed.</li>
+<li>Focused HPC and import tests: 9 passed in 4.30 seconds.</li>
+<li>Mocked launches cover default and overridden arguments (including spaces),
+MPI/MPS environment forwarding, and MPS cleanup after both successful and failed launches.</li>
+<li>Sphinx HTML build: passed.</li>
+<li>Publication privacy check: passed.</li>
+<li>Full suite: 103 passed in 297.47 seconds, with one previously documented NumPy binary-compatibility warning during REMD extraction.</li>
+</ul>
+<p>The first focused run inherited the development session's Slurm allocation:
+the existing MD dry-run test entered its in-allocation path and failed. Clearing
+Slurm job identifiers made all focused tests pass. The initial full run was
+stopped and restarted with Slurm/MPI launcher variables cleared and the
+cranberry-dev environment on PATH. No changes were made to the existing MD test.</p>
+<h2>Risks and limits</h2>
+<p>No live CUDA, MPS, or Slurm REMD job was submitted. Cluster account, partition,
+MPI integration, and GPU visibility policies need site-specific verification.
+Submit from the repository root with Cranberry and the REMD/MPI dependencies
+available; match Slurm task allocation when overriding replica count. This is the
+original small batch example, not a generalized submission framework.</p>
+<p>Commit and replacement PR publication are approved. Once that
+replacement merges, close PR #19 and remove its obsolete feature branch.</p>
+</body></html>
