@@ -106,6 +106,26 @@ cranberry remd cranberry/data/examples/ggcGCAAgcc_cg_vs_conect.pdb \
   --output-dir remd-run
 ```
 
+Run the same example on one Slurm GPU with MPI ranks sharing it through CUDA MPS
+(submit from the repository root with Cranberry, OpenMMTools, and MPI available):
+
+```bash
+sbatch scripts/hpc/submit_remd_mpi_mps_one_gpu_example_slurm.sh
+```
+
+The script defaults to eight ranks and replicas. Override inputs, output directory,
+steps, or replica count through environment variables; match the Slurm task allocation
+when changing the replica count:
+
+```bash
+OUTPUT_DIR=remd-mps-run STEPS=500000 N_REPLICAS=4 \
+sbatch --ntasks=4 scripts/hpc/submit_remd_mpi_mps_one_gpu_example_slurm.sh
+```
+
+MPS starts when NVIDIA tooling is available and stops on exit. Otherwise the script
+warns and continues without MPS. Cluster account, partition, and MPI configuration
+may require local adjustments.
+
 Extract trajectories by thermodynamic temperature:
 
 ```bash
