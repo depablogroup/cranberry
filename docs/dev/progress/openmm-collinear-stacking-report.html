@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CRANBERRY OpenMM Collinear Normal-Orientation Review</title>
+  <style>
+    :root { --ink:#17212b; --muted:#596775; --line:#d9e1e8; --soft:#f6f8fa; --ok:#14733f; --warn:#9a5b00; }
+    body { margin:0; color:var(--ink); font:15px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    main { max-width:1080px; margin:0 auto; padding:36px 28px 72px; }
+    h1 { margin:0 0 10px; font-size:31px; line-height:1.16; }
+    h2 { margin:30px 0 12px; padding-top:20px; border-top:1px solid var(--line); font-size:22px; }
+    h3 { margin:20px 0 8px; font-size:17px; }
+    p { margin:0 0 12px; color:var(--muted); }
+    code, pre { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace; }
+    pre { margin:10px 0 0; padding:13px 15px; overflow:auto; color:#edf5ff; background:#101820; border-radius:8px; font-size:13px; }
+    table { width:100%; border-collapse:collapse; margin:12px 0 0; font-size:14px; }
+    th, td { border-bottom:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+    th { background:var(--soft); }
+    ul { margin:8px 0 0 20px; padding:0; }
+    li { margin:5px 0; }
+    .ok { color:var(--ok); font-weight:700; }
+    .warn { color:var(--warn); font-weight:700; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>CRANBERRY OpenMM Collinear Normal-Orientation Review</h1>
+  <p>Developer review for the stacking numerical-stability fix tracked in GitHub issue #20 and the matching pairing normal-orientation follow-up. The change removes the singular OpenMM <code>dihedral()</code> primitive from donor/acceptor base-normal cosine expressions while preserving the same analytic value away from singular geometries.</p>
+
+  <h2>Scope</h2>
+  <table>
+    <thead><tr><th>Path</th><th>Change</th></tr></thead>
+    <tbody>
+      <tr><td><code>cranberry/forcefield.py</code></td><td>Replaces fused stacking and pairing <code>cos_normal_psi</code> from the legacy <code>select(angle/dihedral)</code> expression with an equivalent distance-only dot-product identity while keeping the optimized one-force stacking and packed-pairing representations from <code>main</code>.</td></tr>
+      <tr><td><code>tests/test_stacking_numerics.py</code></td><td>Adds CPU OpenMM checks proving off-singularity energy/force equivalence, finite collinear stacking forces, finite pairing forces with parallel base-normal vectors, and finite minimization for actual Cranberry systems.</td></tr>
+      <tr><td><code>docs/dev/repro/openmm_collinear_dihedral_repro.py</code></td><td>Extends the standalone four-particle OpenMM reproducer with the fixed distance-dot orientation case.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Root Cause</h2>
+  <p>The old stacking expression attempted to avoid collinear dihedrals with <code>select(sin(A)*sin(B), full, partial)</code>. The pairing <code>h</code> gate used the same normal-orientation reconstruction. OpenMM documents <code>select(x,y,z)</code> as exact-zero selection, so near or at 180 degrees <code>sin(pi)</code> can be a tiny nonzero value and select the branch containing <code>dihedral()</code>. In <code>CustomHbondForce</code>, a singular <code>dihedral()</code> can also contaminate force derivatives even when it appears in an unselected branch.</p>
+  <pre><code>cos_normal_psi=select(sin(D2D1A1)*sin(D1A1A2), cos_normal_psi_full, cos_normal_psi_partial);
+cos_normal_psi_full=sin(D2D1A1)*sin(D1A1A2)*cos(phi)-cos(D2D1A1)*cos(D1A1A2);
+cos_normal_psi_partial=-cos(D2D1A1)*cos(D1A1A2);
+D2D1A1=angle(d2, d1, a1); D1A1A2=angle(d1, a1, a2); phi=dihedral(d2, d1, a1, a2);</code></pre>
+
+  <h2>Replacement Formula</h2>
+  <p>The stacking <code>g3</code> term and pairing <code>h</code> term need the cosine of the relative base-normal orientation, not the signed dihedral angle itself. The new expression computes the same normal dot product directly from distances:</p>
+  <pre><code>cos_normal_psi=
+(
+  distance(d2,a1)^2
++ distance(d1,a2)^2
+- distance(d2,a2)^2
+- distance(d1,a1)^2
+) / (2*distance(d1,d2)*distance(a1,a2));</code></pre>
+  <p>This follows from expanding squared distances. The numerator cancels to <code>2*(d2-d1) dot (a2-a1)</code>, so the normalized expression is the cosine between the donor and acceptor normal vectors. It is algebraically equivalent to the old angle/dihedral reconstruction wherever the dihedral is defined, and remains well-defined at collinearity as long as each normal vector has nonzero length.</p>
+
+  <h2>Physics Audit</h2>
+  <p>In the pairing expression, the particle names map to base sites as follows:</p>
+  <table>
+    <thead><tr><th>Expression name</th><th>Cranberry site</th><th>Physical role</th></tr></thead>
+    <tbody>
+      <tr><td><code>d1</code></td><td>donor <code>BC</code></td><td>donor base center</td></tr>
+      <tr><td><code>d2</code></td><td>donor <code>BN</code></td><td>donor base-normal site</td></tr>
+      <tr><td><code>d3</code></td><td>donor <code>B1</code></td><td>donor in-plane base reference site</td></tr>
+      <tr><td><code>a1</code></td><td>acceptor <code>BC</code></td><td>acceptor base center</td></tr>
+      <tr><td><code>a2</code></td><td>acceptor <code>BN</code></td><td>acceptor base-normal site</td></tr>
+      <tr><td><code>a3</code></td><td>acceptor <code>B1</code></td><td>acceptor in-plane base reference site</td></tr>
+    </tbody>
+  </table>
+  <p>The replacement therefore acts only on the angle between the two out-of-plane normal vectors <code>d1-&gt;d2</code> and <code>a1-&gt;a2</code>. This is the quantity used by stacking's <code>g3</code> gate and pairing's <code>h</code> gate.</p>
+  <pre><code>stacking: g3 = tanh(... sign*cos_normal_psi - cos(psi0) ...)
+pairing:  h = tanh(... psi_sign*cos_normal_psi - cos(psi0) ...)</code></pre>
+  <p>The quoted pairing torsions are different:</p>
+  <pre><code>D3D1D2A1 = dihedral(d3,d1,d2,a1)
+A3A1A2D1 = dihedral(a3,a1,a2,d1)</code></pre>
+  <p>These terms use each base's in-plane <code>B1</code> reference together with its normal vector and the partner base center. They gate the signed local phase of the donor and acceptor geometry:</p>
+  <pre><code>g3 = tanh(... cos(D3D1D2A1 - phi1) - cos(dphi1) ...)
+g4 = tanh(... cos(A3A1A2D1 - phi2) - cos(dphi2) ...)</code></pre>
+  <p>The packaged pairing table confirms that <code>phi1</code> and <code>phi2</code> are genuine phase targets, not just zero-or-pi alignment constants. Across the 25 pairing rows, example values include <code>phi1=1.088</code>, <code>2.837</code>, <code>4.703</code> and <code>phi2=1.314</code>, <code>3.520</code>, <code>5.095</code> radians. A distance-only dot product would erase handedness and cannot represent <code>cos(phi-phi0)</code> for arbitrary <code>phi0</code> without a separate signed construction. Those torsions remain unchanged in this PR.</p>
+
+  <h2>Production Code</h2>
+  <p>The merge resolution keeps the collaborator's fused stacking force and packed-pairing force. A small helper now emits the shared distance-dot expression for stacking's default particle names and pairing's donor/acceptor names. The signed pairing torsions <code>D3D1D2A1</code> and <code>A3A1A2D1</code> remain unchanged because they encode different phase gates, not a plain normal-vector cosine.</p>
+  <pre><code>def _normal_cosine_expression(d1="d1", d2="d2", a1="a1", a2="a2"):
+    return (
+        f"(distance({d2},{a1})^2+distance({d1},{a2})^2"
+        f"-distance({d2},{a2})^2-distance({d1},{a1})^2)"
+        f"/(2*distance({d1},{d2})*distance({a1},{a2}))"
+    )
+
+... + f"cos_normal_psi={_normal_cosine_expression(d1, d2, a1, a2)}; "</code></pre>
+
+  <h2>Validation</h2>
+  <table>
+    <thead><tr><th>Command</th><th>Result</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>conda run -n cranberry-dev python -m pytest -q tests/test_stacking_numerics.py</code></td><td class="ok">4 passed</td><td>Proves distance-dot energy/force equivalence off-singularity, finite CPU stacking forces at exact collinearity, finite CPU pairing forces with parallel base normals, and finite CPU minimization for actual Cranberry systems.</td></tr>
+      <tr><td><code>conda run -n cranberry-dev python docs/dev/repro/openmm_collinear_dihedral_repro.py</code></td><td class="ok">completed</td><td>Old CPU <code>CustomHbondForce</code> dihedral/select cases still reproduce NaN forces; new <code>distance_dot_orientation</code> is finite and minimizable at zero offset.</td></tr>
+      <tr><td><code>conda run -n cranberry-dev python -m pytest -q tests/test_energy.py</code></td><td class="ok">11 passed</td><td>Canonical CPU energy regressions, optimized pairing checks, and fused stacking component reporting remain unchanged at the existing tolerances.</td></tr>
+      <tr><td><code>conda run -n cranberry-dev python -m pytest -q tests/test_md.py::test_create_system_periodic_switches_legacy_pbc_forces tests/test_md.py::test_periodic_box_validation_includes_compound_pairing_cutoff tests/test_md.py::test_run_md_writes_minimization_report tests/test_md.py::test_run_md_writes_default_outputs</code></td><td class="ok">4 passed</td><td>CPU minimization/reporting smoke checks and the post-optimization periodic/fused-force paths still pass.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Important Reproducer Rows</h2>
+  <pre><code>CPU | hbond | cranberry_shaped_orientation | 0e+00 | -1 | forces_finite no  | minimize FAIL: Particle coordinate is NaN
+CPU | hbond | distance_dot_orientation     | 0e+00 | -1 | forces_finite yes | minimize pass</code></pre>
+
+  <h2>Risks And Follow-Up</h2>
+  <ul>
+    <li>The fix intentionally changes the expression graph, but not the analytic stacking or pairing normal-orientation energy away from singularity. Off-singularity force equivalence was checked on CPU OpenMM.</li>
+    <li>The fused stacking scale parameters remain intentionally internal. They default to one during dynamics and are used to isolate <code>stacking35</code>, <code>stacking55</code>, and <code>stacking33</code> for detailed energy reporting.</li>
+    <li>CUDA was not available in the local conda environments, so CUDA validation remains follow-up.</li>
+    <li>Pairing still contains the signed <code>phi1</code> and <code>phi2</code> dihedral gates. Those are not replaced by this distance-dot identity because they are not plain normal-vector cosine terms.</li>
+    <li>The checkout contains unrelated pre-existing dirty files; the PR should stage only the files listed in this report.</li>
+  </ul>
+</main>
+</body>
+</html>
